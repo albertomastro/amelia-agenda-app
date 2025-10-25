@@ -31,6 +31,19 @@ export default function App() {
   const apiUrl = import.meta.env.VITE_API_URL || 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
+  // Gestione provider_id da URL (per integrazione WordPress)
+  const urlParams = new URLSearchParams(window.location.search);
+  const providerId = urlParams.get('provider_id');
+  const isEmbedded = urlParams.get('embedded') === 'true';
+  console.log('👤 Provider ID:', providerId);
+  console.log('📱 Embedded mode:', isEmbedded);
+  
+  // Validazione provider_id
+  const validProviderId = providerId && !isNaN(parseInt(providerId)) ? parseInt(providerId) : null;
+  if (providerId && !validProviderId) {
+    console.warn('⚠️ Provider ID non valido:', providerId);
+  }
+
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 1024) {
@@ -60,10 +73,26 @@ export default function App() {
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
     Promise.all([
-      fetchAPI('services').then(d => setServices(d.data || [])),
-      fetchAPI('customers').then(d => setCustomers(d.data || [])),
-      fetchAPI('locations').then(d => setLocations(d.data || [])),
-      fetchAPI('stats').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
+      fetchAPI('services').then(d => {
+        console.log('📋 Services API response:', d);
+        setServices(d.data || d || []);
+        return d;
+      }),
+      fetchAPI('customers').then(d => {
+        console.log('👥 Customers API response:', d);
+        setCustomers(d.data || d || []);
+        return d;
+      }),
+      fetchAPI('locations').then(d => {
+        console.log('📍 Locations API response:', d);
+        setLocations(d.data || d || []);
+        return d;
+      }),
+      fetchAPI('stats').then(d => {
+        console.log('📊 Stats API response:', d);
+        setStats(d.data || d || null);
+        return d;
+      })
     ]).catch(err => console.error('Background load:', err));
     
   } catch (err) {
@@ -76,17 +105,47 @@ export default function App() {
   const loadAppointments = async () => {
   try {
     const { startDate, endDate } = getDateRange();
-    const appointmentsData = await fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
+    let apiEndpoint = `appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`;
     
-    const allData = appointmentsData.data || [];
+    // Aggiungi provider_id se presente e valido
+    if (validProviderId) {
+      apiEndpoint += `&provider_id=${validProviderId}`;
+      console.log('🔍 Loading appointments for provider:', validProviderId);
+    }
     
-    setAllAppointments(allData); // ← DEVE esserci
+    console.log('📡 API endpoint:', apiEndpoint);
+    const appointmentsData = await fetchAPI(apiEndpoint);
+    
+    console.log('📥 Appointments data received:', appointmentsData);
+    
+    const allData = appointmentsData.data || appointmentsData || [];
+    
+    setAllAppointments(allData);
     
     const activeAppointments = allData.filter(apt => apt.status !== 'canceled');
-    setAppointments(activeAppointments); // ← DEVE esserci
+    setAppointments(activeAppointments);
+    
+    console.log(`✅ Loaded ${allData.length} total appointments, ${activeAppointments.length} active`);
+    
   } catch (err) {
-    console.error('Errore caricamento appuntamenti:', err);
-    setError(err.message || 'Errore caricamento appuntamenti');
+    console.error('❌ Errore caricamento appuntamenti:', err);
+    console.error('🔍 Provider ID used:', validProviderId);
+    setError(`Errore caricamento appuntamenti: ${err.message}`);
+    
+    // Fallback: prova senza provider_id se quello specifico fallisce
+    if (validProviderId) {
+      console.log('🔄 Retry without provider_id...');
+      try {
+        const fallbackEndpoint = `appointments?start_date=${formatAPIDate(getDateRange().startDate)}&end_date=${formatAPIDate(getDateRange().endDate)}`;
+        const fallbackData = await fetchAPI(fallbackEndpoint);
+        const allData = fallbackData.data || fallbackData || [];
+        setAllAppointments(allData);
+        setAppointments(allData.filter(apt => apt.status !== 'canceled'));
+        console.log('✅ Fallback successful');
+      } catch (fallbackErr) {
+        console.error('❌ Fallback also failed:', fallbackErr);
+      }
+    }
   }
 };
 
@@ -389,6 +448,43 @@ const response = await fetch(url, {
         <div className="fantastical-header" style={{ opacity: 0.5 }}>
           <div style={{ height: '100px', background: 'var(--gray-100)', borderRadius: '12px', animation: 'pulse 1.5s infinite' }}></div>
         </div>
+        <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+          <div style={{ marginBottom: '16px', fontSize: '14px' }}>
+            Caricamento agenda{validProviderId ? ` per provider ${validProviderId}` : ''}...
+          </div>
+          <div className="loading-spinner" style={{ margin: '0 auto' }}></div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error fallback UI
+  if (error && error.includes('provider')) {
+    return (
+      <div className="fantastical-app">
+        <div style={{ padding: '40px', textAlign: 'center' }}>
+          <div style={{ color: '#dc2626', marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
+            Errore Provider
+          </div>
+          <div style={{ color: '#6b7280', marginBottom: '24px' }}>
+            Problema con provider ID: {validProviderId}
+          </div>
+          <button 
+            onClick={() => {
+              window.location.href = window.location.pathname; // Ricarica senza parametri
+            }}
+            style={{
+              background: '#1A5367',
+              color: 'white', 
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Ricarica senza Provider
+          </button>
+        </div>
       </div>
     );
   }
@@ -499,39 +595,30 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
       {/* 🆕 TOPBAR AZIENDALE */}
       <div className="topbar">
         <div className="topbar-container">
-          {/* Logo e Brand */}
+          {/* Logo */}
           <div className="topbar-brand">
             <img 
-              src="https://dottori-online.com/wp-content/uploads/2024/11/cropped-Logo-new.webp" 
+              src="https://dottori-online.com/wp-content/uploads/2025/04/MAIN-LOGO-DOC_new_mini.webp" 
               alt="Dottori Online" 
               className="topbar-logo"
             />
-            <span className="topbar-brand-text">Dottori Online</span>
           </div>
           
           {/* Navigazione Desktop */}
           <nav className="topbar-nav">
-            <a href="https://dottori-online.com" className="topbar-nav-link">
-              <Calendar size={16} />
-              <span>Home</span>
-            </a>
-            <a href="https://dottori-online.com/bacheca-di-comunita" className="topbar-nav-link">
+            <a href="https://dottori-online.com/bacheca-di-comunita/" className="topbar-nav-link">
               <User size={16} />
-              <span>Comunità</span>
-            </a>
-            <a href="https://dottori-online.com/visita-medica-online" className="topbar-nav-link">
-              <Plus size={16} />
-              <span>Prenota</span>
+              <span>Bacheca di Comunità</span>
             </a>
           </nav>
           
           {/* Menu Utente */}
           <div className="topbar-user">
-            <button className="topbar-user-btn">
+            <a href="https://dottori-online.com/membri/me/profile/" className="topbar-user-btn">
               <User size={20} />
-              <span className="topbar-user-text">Il Mio Account</span>
+              <span className="topbar-user-text">Il Mio Profilo</span>
               <ChevronRight size={16} className="topbar-chevron" />
-            </button>
+            </a>
           </div>
         </div>
       </div>
@@ -558,10 +645,10 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
           </button>
         </div>
 
-        {(stats || true) && (
+        {stats && (
           <div className="stats-grid">
             <div className="stat-card stat-today clickable" onClick={() => onStatCardClick('today')}>
-              <div className="stat-value">{stats?.appointments_today || 0}</div>
+              <div className="stat-value">{todayApprovedCount}</div>
               <div className="stat-label">Oggi</div>
             </div>
             <div className="stat-card clickable" onClick={() => onStatCardClick('total')}>
@@ -1554,7 +1641,8 @@ const handleMonthChange = async (date) => {
     if (prev.serviceId) {
       const service = services.find(s => String(s.id) === String(prev.serviceId));
       if (service && service.duration) {
-        const endDate = new Date(localDate.getTime() + (service.duration * 60 * 1000));
+        // service.duration è già in secondi (da Amelia)
+        const endDate = new Date(localDate.getTime() + (service.duration * 1000));
         
         const endYear = endDate.getFullYear();
         const endMonth = String(endDate.getMonth() + 1).padStart(2, '0');
@@ -1721,14 +1809,22 @@ const handleCreateCustomer = async () => {
       }
       
       const result = await response.json();
+      console.log('📥 Response creazione cliente:', result);
+      
+      // L'API può restituire sia result.data che result diretto
+      const customerData = result.data || result;
+      
+      if (!customerData || !customerData.id) {
+        throw new Error('Risposta API incompleta - manca ID cliente');
+      }
       
       const newCustomer = {
-        id: result.data.id,
-        firstName: result.data.firstName,
-        lastName: result.data.lastName,
-        email: result.data.email,
-        phone: result.data.phone,
-        name: `${result.data.firstName} ${result.data.lastName}`
+        id: customerData.id,
+        firstName: customerData.firstName,
+        lastName: customerData.lastName,
+        email: customerData.email,
+        phone: customerData.phone,
+        name: `${customerData.firstName} ${customerData.lastName}`
       };
       
       setCustomers(prev => {
@@ -1956,7 +2052,7 @@ const handleCreateCustomer = async () => {
                   <option value="">Seleziona servizio</option>
                   {services.map(service => (
                     <option key={service.id} value={service.id}>
-                      {service.name} ({service.duration} min - €{service.price})
+                      {service.name} ({Math.round(service.duration / 60)} min - €{service.price})
                     </option>
                   ))}
                 </select>
@@ -2229,22 +2325,14 @@ const topbarStyles = `
   .topbar-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
     flex-shrink: 0;
   }
   
   .topbar-logo {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     object-fit: contain;
-    border-radius: 6px;
-  }
-  
-  .topbar-brand-text {
-    font-size: 18px;
-    font-weight: 600;
-    color: #0F5665;
-    letter-spacing: -0.025em;
+    border-radius: 8px;
   }
   
   /* NAVIGATION */
@@ -2319,10 +2407,6 @@ const topbarStyles = `
     .topbar-container {
       padding: 8px 16px;
       height: 56px;
-    }
-    
-    .topbar-brand-text {
-      display: none;
     }
     
     .topbar-nav {
