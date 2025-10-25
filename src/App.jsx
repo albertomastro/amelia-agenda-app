@@ -28,7 +28,7 @@ export default function App() {
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || '/amelia-api.php';
+  const apiUrl = config.restUrl || 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
   useEffect(() => {
@@ -1316,7 +1316,7 @@ function CreateAppointmentModal({ onClose, onCreate, services, customers, setCus
 
   
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || '/amelia-api.php';
+  const apiUrl = config.restUrl || 'https://dottori-online.com/amelia-api.php';
 
 // Dove viene chiamato loadAvailableDays
 useEffect(() => {
