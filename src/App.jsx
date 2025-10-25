@@ -73,22 +73,22 @@ export default function App() {
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
     Promise.all([
-      fetchAPI('services').then(d => {
+      fetchAPI(`services${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('📋 Services API response:', d);
         setServices(d.data || d || []);
         return d;
       }),
-      fetchAPI('customers').then(d => {
+      fetchAPI(`customers${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('👥 Customers API response:', d);
         setCustomers(d.data || d || []);
         return d;
       }),
-      fetchAPI('locations').then(d => {
+      fetchAPI(`locations${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('📍 Locations API response:', d);
         setLocations(d.data || d || []);
         return d;
       }),
-      fetchAPI('stats').then(d => {
+      fetchAPI(`stats${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('📊 Stats API response:', d);
         setStats(d.data || d || null);
         return d;
@@ -118,7 +118,18 @@ export default function App() {
     
     console.log('📥 Appointments data received:', appointmentsData);
     
-    const allData = appointmentsData.data || appointmentsData || [];
+    let allData = [];
+    if (Array.isArray(appointmentsData)) {
+      allData = appointmentsData;
+    } else if (appointmentsData && Array.isArray(appointmentsData.data)) {
+      allData = appointmentsData.data;
+    } else if (appointmentsData && appointmentsData.data) {
+      allData = [appointmentsData.data]; // Singolo oggetto -> array
+    } else {
+      allData = [];
+    }
+    
+    console.log('📊 Processed appointments array:', allData, 'Length:', allData.length);
     
     setAllAppointments(allData);
     
@@ -138,10 +149,20 @@ export default function App() {
       try {
         const fallbackEndpoint = `appointments?start_date=${formatAPIDate(getDateRange().startDate)}&end_date=${formatAPIDate(getDateRange().endDate)}`;
         const fallbackData = await fetchAPI(fallbackEndpoint);
-        const allData = fallbackData.data || fallbackData || [];
-        setAllAppointments(allData);
-        setAppointments(allData.filter(apt => apt.status !== 'canceled'));
+        
+        let fallbackArray = [];
+        if (Array.isArray(fallbackData)) {
+          fallbackArray = fallbackData;
+        } else if (fallbackData && Array.isArray(fallbackData.data)) {
+          fallbackArray = fallbackData.data;
+        } else {
+          fallbackArray = [];
+        }
+        
+        setAllAppointments(fallbackArray);
+        setAppointments(fallbackArray.filter(apt => apt.status !== 'canceled'));
         console.log('✅ Fallback successful');
+        setError(null); // Clear error se fallback funziona
       } catch (fallbackErr) {
         console.error('❌ Fallback also failed:', fallbackErr);
       }
