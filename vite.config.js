@@ -18,7 +18,7 @@ export default defineConfig({
       }
     },
     rollupOptions: {
-      input: './src/main.jsx',
+      // RIMUOVI input personalizzato - usa index.html di default
       output: {
         entryFileNames: 'calendar-app.js',
         assetFileNames: 'calendar-app.[ext]',
