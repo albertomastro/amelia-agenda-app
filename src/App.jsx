@@ -2150,4 +2150,4 @@ const handleCreateCustomer = async () => {
       `}</style>
     </div>
   );
-}
+}console.log('Force rebuild sab 25 ott 2025 15:54:40 CEST');
