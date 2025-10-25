@@ -1316,7 +1316,7 @@ function CreateAppointmentModal({ onClose, onCreate, services, customers, setCus
 
   
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || 'https://dottori-online.com/amelia-api.php';
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://dottori-online.com/amelia-api.php';
 
 // Dove viene chiamato loadAvailableDays
 useEffect(() => {
