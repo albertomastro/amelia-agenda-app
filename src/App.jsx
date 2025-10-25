@@ -2153,3 +2153,4 @@ const handleCreateCustomer = async () => {
 }console.log('Force rebuild sab 25 ott 2025 15:54:40 CEST');
 console.log('Force rebuild sab 25 ott 2025 16:04:26 CEST');
 console.log('Force rebuild sab 25 ott 2025 16:44:10 CEST');
+// Updated API URL handling
