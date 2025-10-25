@@ -28,7 +28,7 @@ export default function App() {
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || '/wp-json/amelia-calendar/v1';
+  const apiUrl = config.restUrl || '/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
   useEffect(() => {
@@ -60,10 +60,10 @@ export default function App() {
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
     Promise.all([
-      fetchAPI('/services').then(d => setServices(d.data || [])),
-      fetchAPI('/customers').then(d => setCustomers(d.data || [])),
-      fetchAPI('/locations').then(d => setLocations(d.data || [])),
-      fetchAPI('/stats').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
+      fetchAPI('services').then(d => setServices(d.data || [])),
+      fetchAPI('customers').then(d => setCustomers(d.data || [])),
+      fetchAPI('locations').then(d => setLocations(d.data || [])),
+      fetchAPI('stats').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
     ]).catch(err => console.error('Background load:', err));
     
   } catch (err) {
@@ -76,7 +76,7 @@ export default function App() {
   const loadAppointments = async () => {
   try {
     const { startDate, endDate } = getDateRange();
-    const appointmentsData = await fetchAPI(`/appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
+    const appointmentsData = await fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
     
     const allData = appointmentsData.data || [];
     
@@ -96,11 +96,11 @@ export default function App() {
     try {
       const { startDate, endDate } = getDateRange();
       const [appointmentsData, servicesData, customersData, locationsData, statsData] = await Promise.all([
-        fetchAPI(`/appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`),
-        fetchAPI('/services'),
-        fetchAPI('/customers'),
-        fetchAPI('/locations'),
-        fetchAPI('/stats')
+        fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`),
+        fetchAPI('services'),
+        fetchAPI('customers'),
+        fetchAPI('locations'),
+        fetchAPI('stats')
       ]);
       setAppointments(appointmentsData.data || []);
       setServices(servicesData.data || []);
@@ -274,7 +274,7 @@ export default function App() {
     setShowCreateModal(false);
     setCreateModalTime(null);
     await loadAppointments();
-    await fetchAPI('/stats').then(d => setStats(d.data || null));
+    await fetchAPI('stats').then(d => setStats(d.data || null));
     
   } catch (err) {
     console.error('Errore reload:', err);
@@ -301,7 +301,7 @@ export default function App() {
       
       setSelectedAppointment(null);
       await loadAppointments();
-      await fetchAPI('/stats').then(d => setStats(d.data || null));
+      await fetchAPI('stats').then(d => setStats(d.data || null));
       
       if (updateData.bookingStart || updateData.bookingEnd) {
         alert('Appuntamento riprogrammato con successo!\n\nIl cliente e il fornitore riceveranno una email di notifica.');
@@ -324,7 +324,7 @@ export default function App() {
       await fetchAPI(`/appointments/${appointmentId}`, { method: 'DELETE' });
       setSelectedAppointment(null);
       await loadAppointments();
-      await fetchAPI('/stats').then(d => setStats(d.data || null));
+      await fetchAPI('stats').then(d => setStats(d.data || null));
       alert('Appuntamento cancellato con successo!');
     } catch (err) {
       alert('Errore cancellazione: ' + err.message);
@@ -1301,7 +1301,7 @@ function CreateAppointmentModal({ onClose, onCreate, services, customers, setCus
 
   
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || '/wp-json/amelia-calendar/v1';
+  const apiUrl = config.restUrl || '/amelia-api.php';
 
 // Dove viene chiamato loadAvailableDays
 useEffect(() => {
