@@ -489,59 +489,105 @@ const response = await fetch(url, {
 }
 
 function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatCardClick }) {
-  const todayApprovedCount = stats?.todayApproved || 0;
+  const todayApprovedCount = stats?.appointments_today || 0;
+  
+  // Debug log per verificare i dati
+  console.log('📊 Stats ricevute in Header:', stats);
   
   return (
-    <div className="fantastical-header">
-      <div className="header-top">
-        <div className="header-left">
-          <button onClick={onToggleSidebar} className="sidebar-toggle">
-            <Menu size={20} />
-          </button>
-          <div className="brand">
-            <div className="brand-icon">
-              <Calendar size={24} />
-            </div>
-            <div>
-              <h1>Agenda Appuntamenti</h1>
-              <p>Gestisci i tuoi appuntamenti</p>
-            </div>
+    <>
+      {/* 🆕 TOPBAR AZIENDALE */}
+      <div className="topbar">
+        <div className="topbar-container">
+          {/* Logo e Brand */}
+          <div className="topbar-brand">
+            <img 
+              src="https://dottori-online.com/wp-content/uploads/2024/11/cropped-Logo-new.webp" 
+              alt="Dottori Online" 
+              className="topbar-logo"
+            />
+            <span className="topbar-brand-text">Dottori Online</span>
+          </div>
+          
+          {/* Navigazione Desktop */}
+          <nav className="topbar-nav">
+            <a href="https://dottori-online.com" className="topbar-nav-link">
+              <Calendar size={16} />
+              <span>Home</span>
+            </a>
+            <a href="https://dottori-online.com/bacheca-di-comunita" className="topbar-nav-link">
+              <User size={16} />
+              <span>Comunità</span>
+            </a>
+            <a href="https://dottori-online.com/visita-medica-online" className="topbar-nav-link">
+              <Plus size={16} />
+              <span>Prenota</span>
+            </a>
+          </nav>
+          
+          {/* Menu Utente */}
+          <div className="topbar-user">
+            <button className="topbar-user-btn">
+              <User size={20} />
+              <span className="topbar-user-text">Il Mio Account</span>
+              <ChevronRight size={16} className="topbar-chevron" />
+            </button>
           </div>
         </div>
-        <button onClick={onNewAppointment} className="btn-primary">
-          <Plus size={20} /> Nuovo Appuntamento
-        </button>
       </div>
-
-      {stats && (
-        <div className="stats-grid">
-          <div className="stat-card stat-today clickable" onClick={() => onStatCardClick('today')}>
-            <div className="stat-value">{todayApprovedCount}</div>
-            <div className="stat-label">Oggi</div>
+      
+      {/* Header Esistente */}
+      <div className="fantastical-header">
+        <div className="header-top">
+          <div className="header-left">
+            <button onClick={onToggleSidebar} className="sidebar-toggle">
+              <Menu size={20} />
+            </button>
+            <div className="brand">
+              <div className="brand-icon">
+                <Calendar size={24} />
+              </div>
+              <div>
+                <h1>Agenda Appuntamenti</h1>
+                <p>Gestisci i tuoi appuntamenti</p>
+              </div>
+            </div>
           </div>
-          <div className="stat-card clickable" onClick={() => onStatCardClick('total')}>
-            <div className="stat-value">{stats.total || 0}</div>
-            <div className="stat-label">Totali</div>
-          </div>
-          <div className="stat-card stat-approved clickable" onClick={() => onStatCardClick('approved')}>
-            <div className="stat-value">{stats.approved || 0}</div>
-            <div className="stat-label">Confermati</div>
-          </div>
-          <div className="stat-card stat-pending clickable" onClick={() => onStatCardClick('pending')}>
-            <div className="stat-value">{stats.pending || 0}</div>
-            <div className="stat-label">In Attesa</div>
-          </div>
-          <div className="stat-card stat-canceled clickable" onClick={() => onStatCardClick('canceled')}>
-            <div className="stat-value">{stats.canceled || 0}</div>
-            <div className="stat-label">Annullati</div>
-          </div>
-          <div className="stat-card clickable" onClick={() => onStatCardClick('rejected')}>
-            <div className="stat-value">{stats.rejected || 0}</div>
-            <div className="stat-label">Rifiutati</div>
-          </div>
+          <button onClick={onNewAppointment} className="btn-primary">
+            <Plus size={20} /> Nuovo Appuntamento
+          </button>
         </div>
-      )}
-    </div>
+
+        {stats && (
+          <div className="stats-grid">
+            <div className="stat-card stat-today clickable" onClick={() => onStatCardClick('today')}>
+              <div className="stat-value">{todayApprovedCount}</div>
+              <div className="stat-label">Oggi</div>
+            </div>
+            <div className="stat-card clickable" onClick={() => onStatCardClick('total')}>
+              <div className="stat-value">{stats.appointments_this_month || 0}</div>
+              <div className="stat-label">Questo Mese</div>
+            </div>
+            <div className="stat-card stat-approved clickable" onClick={() => onStatCardClick('approved')}>
+              <div className="stat-value">{stats.total_customers || 0}</div>
+              <div className="stat-label">Clienti</div>
+            </div>
+            <div className="stat-card stat-pending clickable" onClick={() => onStatCardClick('pending')}>
+              <div className="stat-value">{stats.total_services || 0}</div>
+              <div className="stat-label">Servizi</div>
+            </div>
+            <div className="stat-card stat-canceled clickable" onClick={() => onStatCardClick('canceled')}>
+              <div className="stat-value">{stats.canceled || 0}</div>
+              <div className="stat-label">Annullati</div>
+            </div>
+            <div className="stat-card clickable" onClick={() => onStatCardClick('rejected')}>
+              <div className="stat-value">{stats.rejected || 0}</div>
+              <div className="stat-label">Rifiutati</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -2156,4 +2202,188 @@ console.log('Force rebuild sab 25 ott 2025 16:44:10 CEST');
 // Updated API URL handling
 // API URL fix sab 25 ott 2025 17:01:47 CEST
 
+// 🎨 CSS TOPBAR AZIENDALE - Ispirato al bottom menu esistente
+const topbarStyles = `
+  .topbar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: #FFFFFF;
+    border-bottom: 1px solid #E8E6E0;
+    box-shadow: 0 2px 8px rgba(15, 86, 101, 0.08);
+  }
+  
+  .topbar-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 12px 24px;
+    height: 60px;
+  }
+  
+  /* BRAND SECTION */
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  
+  .topbar-logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+  
+  .topbar-brand-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: #0F5665;
+    letter-spacing: -0.025em;
+  }
+  
+  /* NAVIGATION */
+  .topbar-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .topbar-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    color: #4A4845;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+  }
+  
+  .topbar-nav-link:hover {
+    background: #F8F6F0;
+    color: #6B8E4E;
+    border-color: #E8E6E0;
+    transform: translateY(-1px);
+  }
+  
+  .topbar-nav-link:active {
+    transform: translateY(0);
+  }
+  
+  /* USER MENU */
+  .topbar-user {
+    flex-shrink: 0;
+  }
+  
+  .topbar-user-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #F7F3EE;
+    border: 1px solid #E8E6E0;
+    border-radius: 24px;
+    color: #4A4845;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .topbar-user-btn:hover {
+    background: #6B8E4E;
+    color: #FFFFFF;
+    border-color: #6B8E4E;
+    transform: translateY(-1px);
+  }
+  
+  .topbar-user-btn:hover .topbar-chevron {
+    transform: translateX(2px);
+  }
+  
+  .topbar-chevron {
+    transition: transform 0.2s ease;
+  }
+  
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .topbar-container {
+      padding: 8px 16px;
+      height: 56px;
+    }
+    
+    .topbar-brand-text {
+      display: none;
+    }
+    
+    .topbar-nav {
+      display: none;
+    }
+    
+    .topbar-user-text {
+      display: none;
+    }
+    
+    .topbar-user-btn {
+      padding: 8px 12px;
+      border-radius: 50%;
+      min-width: 40px;
+      min-height: 40px;
+      justify-content: center;
+    }
+    
+    .topbar-chevron {
+      display: none;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .topbar-container {
+      padding: 8px 12px;
+      height: 52px;
+    }
+    
+    .topbar-logo {
+      width: 28px;
+      height: 28px;
+    }
+    
+    .topbar-user-btn {
+      min-width: 36px;
+      min-height: 36px;
+      padding: 6px;
+    }
+  }
+  
+  /* ACCESSIBILITY */
+  .topbar-nav-link:focus-visible,
+  .topbar-user-btn:focus-visible {
+    outline: 2px solid #0F5665;
+    outline-offset: 2px;
+  }
+  
+  /* REDUCED MOTION */
+  @media (prefers-reduced-motion: reduce) {
+    .topbar-nav-link,
+    .topbar-user-btn,
+    .topbar-chevron {
+      transition: none;
+    }
+  }
+`;
 
+// Inietta gli stili nel DOM
+if (typeof window !== 'undefined') {
+  const styleElement = document.createElement('style');
+  styleElement.textContent = topbarStyles;
+  document.head.appendChild(styleElement);
+}
