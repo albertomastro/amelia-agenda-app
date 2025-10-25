@@ -28,7 +28,8 @@ export default function App() {
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
   const config = window.ameliaCalendarData || {};
-  const apiUrl = config.restUrl || 'https://dottori-online.com/amelia-api.php';
+// Sostituisci temporaneamente la riga 31:
+const apiUrl = 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
   useEffect(() => {
@@ -2151,3 +2152,4 @@ const handleCreateCustomer = async () => {
     </div>
   );
 }console.log('Force rebuild sab 25 ott 2025 15:54:40 CEST');
+console.log('Force rebuild sab 25 ott 2025 16:04:26 CEST');
