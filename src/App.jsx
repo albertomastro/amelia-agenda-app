@@ -137,7 +137,22 @@ export default function App() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // Timeout 5s
 
-      const response = await fetch(`${apiUrl}${endpoint}`, {
+      let url;
+if (endpoint.includes('?')) {
+  // Se ha già parametri (es: appointments?start_date=...)
+  const [action, params] = endpoint.split('?');
+  url = `${apiUrl}?action=${action}&${params}`;
+} else if (endpoint.includes('/') && !endpoint.startsWith('/')) {
+  // Se contiene uno slash (es: appointments/123)
+  const [action, id] = endpoint.split('/');
+  url = `${apiUrl}?action=${action}&id=${id}`;
+} else {
+  // Endpoint semplice (es: services)
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+  url = `${apiUrl}?action=${cleanEndpoint}`;
+}
+console.log('🔧 API Call:', url);
+const response = await fetch(url, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
