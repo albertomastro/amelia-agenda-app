@@ -558,30 +558,30 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
           </button>
         </div>
 
-        {stats && (
+        {(stats || true) && (
           <div className="stats-grid">
             <div className="stat-card stat-today clickable" onClick={() => onStatCardClick('today')}>
-              <div className="stat-value">{todayApprovedCount}</div>
+              <div className="stat-value">{stats?.appointments_today || 0}</div>
               <div className="stat-label">Oggi</div>
             </div>
             <div className="stat-card clickable" onClick={() => onStatCardClick('total')}>
-              <div className="stat-value">{stats.appointments_this_month || 0}</div>
+              <div className="stat-value">{stats?.appointments_this_month || 0}</div>
               <div className="stat-label">Questo Mese</div>
             </div>
             <div className="stat-card stat-approved clickable" onClick={() => onStatCardClick('approved')}>
-              <div className="stat-value">{stats.total_customers || 0}</div>
+              <div className="stat-value">{stats?.total_customers || 0}</div>
               <div className="stat-label">Clienti</div>
             </div>
             <div className="stat-card stat-pending clickable" onClick={() => onStatCardClick('pending')}>
-              <div className="stat-value">{stats.total_services || 0}</div>
+              <div className="stat-value">{stats?.total_services || 0}</div>
               <div className="stat-label">Servizi</div>
             </div>
             <div className="stat-card stat-canceled clickable" onClick={() => onStatCardClick('canceled')}>
-              <div className="stat-value">{stats.canceled || 0}</div>
+              <div className="stat-value">{stats?.canceled || 0}</div>
               <div className="stat-label">Annullati</div>
             </div>
             <div className="stat-card clickable" onClick={() => onStatCardClick('rejected')}>
-              <div className="stat-value">{stats.rejected || 0}</div>
+              <div className="stat-value">{stats?.rejected || 0}</div>
               <div className="stat-label">Rifiutati</div>
             </div>
           </div>
