@@ -75,17 +75,20 @@ export default function App() {
     Promise.all([
       fetchAPI(`services${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('📋 Services API response:', d);
-        setServices(d.data || d || []);
+        const servicesArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+        setServices(servicesArray);
         return d;
       }),
       fetchAPI(`customers${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('👥 Customers API response:', d);
-        setCustomers(d.data || d || []);
+        const customersArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+        setCustomers(customersArray);
         return d;
       }),
       fetchAPI(`locations${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
         console.log('📍 Locations API response:', d);
-        setLocations(d.data || d || []);
+        const locationsArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+        setLocations(locationsArray);
         return d;
       }),
       fetchAPI(`stats${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
