@@ -31,18 +31,17 @@ export default function App() {
   const apiUrl = import.meta.env.VITE_API_URL || 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
-  // Gestione provider_id da URL (per integrazione WordPress)
-  const urlParams = new URLSearchParams(window.location.search);
-  const providerId = urlParams.get('provider_id');
-  const isEmbedded = urlParams.get('embedded') === 'true';
-  console.log('👤 Provider ID:', providerId);
-  console.log('📱 Embedded mode:', isEmbedded);
-  
-  // Validazione provider_id
-  const validProviderId = providerId && !isNaN(parseInt(providerId)) ? parseInt(providerId) : null;
-  if (providerId && !validProviderId) {
-    console.warn('⚠️ Provider ID non valido:', providerId);
-  }
+  // Sistema basato su ruoli WordPress Amelia
+const [userInfo, setUserInfo] = useState(null);
+const [userRole, setUserRole] = useState(null);
+const [providerId, setProviderId] = useState(null);
+const [customerId, setCustomerId] = useState(null);
+const [canCreateAppointments, setCanCreateAppointments] = useState(false);
+const [canViewAll, setCanViewAll] = useState(false);
+
+console.log('👤 User Role:', userRole);
+console.log('🔑 Provider ID:', providerId);
+console.log('🔑 Customer ID:', customerId);
 
   useEffect(() => {
     const handleResize = () => {
@@ -58,45 +57,74 @@ export default function App() {
   useEffect(() => {
     loadInitialData();
   }, []);
-
+  const loadUserInfo = async () => {
+  try {
+    const userData = await fetchAPI('user_info');
+    if (userData.status === 'success' && userData.data) {
+      const data = userData.data;
+      setUserInfo(data);
+      setUserRole(data.amelia_role);
+      setProviderId(data.provider_id);
+      setCustomerId(data.customer_id);
+      setCanCreateAppointments(data.can_create_appointments);
+      setCanViewAll(data.can_view_all);
+      
+      console.log('✅ User info loaded:', data);
+    } else {
+      console.error('❌ User info failed:', userData);
+    }
+  } catch (error) {
+    console.error('❌ Error loading user info:', error);
+  }
+};
   useEffect(() => {
     loadAppointments();
   }, [selectedDate, view]);
 
-  const loadInitialData = async () => {
+const loadInitialData = async () => {
   setLoading(true);
   setError(null);
   
   try {
+    // Aspetta che userInfo sia caricato
+    if (!userInfo) {
+      await loadUserInfo();
+    }
+    
     // PRIORITÀ 1: Appuntamenti (bloccante)
     await loadAppointments();
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
-    Promise.all([
-      fetchAPI(`services${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
-        console.log('📋 Services API response:', d);
-        const servicesArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
-        setServices(servicesArray);
-        return d;
-      }),
-      fetchAPI(`customers${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
-        console.log('👥 Customers API response:', d);
-        const customersArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
-        setCustomers(customersArray);
-        return d;
-      }),
-      fetchAPI(`locations${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
-        console.log('📍 Locations API response:', d);
-        const locationsArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
-        setLocations(locationsArray);
-        return d;
-      }),
-      fetchAPI(`stats${validProviderId ? `?provider_id=${validProviderId}` : ''}`).then(d => {
-        console.log('📊 Stats API response:', d);
-        setStats(d.data || d || null);
-        return d;
-      })
-    ]).catch(err => console.error('Background load:', err));
+    // Solo per provider e manager, non per customer
+    if (canCreateAppointments) {
+      Promise.all([
+        fetchAPI('services').then(d => {
+          console.log('📋 Services API response:', d);
+          const servicesArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setServices(servicesArray);
+          return d;
+        }),
+        fetchAPI('customers').then(d => {
+          console.log('👥 Customers API response:', d);
+          const customersArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setCustomers(customersArray);
+          return d;
+        }),
+        fetchAPI('locations').then(d => {
+          console.log('📍 Locations API response:', d);
+          const locationsArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setLocations(locationsArray);
+          return d;
+        }),
+        fetchAPI('stats').then(d => {
+          console.log('📊 Stats API response:', d);
+          setStats(d.data || d || null);
+          return d;
+        })
+      ]).catch(err => console.error('Background load:', err));
+    } else {
+      console.log('ℹ️ Customer role - skipping services/customers/locations/stats');
+    }
     
   } catch (err) {
     setError(err.message || 'Errore caricamento dati');
@@ -110,12 +138,6 @@ export default function App() {
     const { startDate, endDate } = getDateRange();
     let apiEndpoint = `appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`;
     
-    // Aggiungi provider_id se presente e valido
-    if (validProviderId) {
-      apiEndpoint += `&provider_id=${validProviderId}`;
-      console.log('🔍 Loading appointments for provider:', validProviderId);
-    }
-    
     console.log('📡 API endpoint:', apiEndpoint);
     const appointmentsData = await fetchAPI(apiEndpoint);
     
@@ -127,7 +149,7 @@ export default function App() {
     } else if (appointmentsData && Array.isArray(appointmentsData.data)) {
       allData = appointmentsData.data;
     } else if (appointmentsData && appointmentsData.data) {
-      allData = [appointmentsData.data]; // Singolo oggetto -> array
+      allData = [appointmentsData.data];
     } else {
       allData = [];
     }
@@ -143,33 +165,7 @@ export default function App() {
     
   } catch (err) {
     console.error('❌ Errore caricamento appuntamenti:', err);
-    console.error('🔍 Provider ID used:', validProviderId);
     setError(`Errore caricamento appuntamenti: ${err.message}`);
-    
-    // Fallback: prova senza provider_id se quello specifico fallisce
-    if (validProviderId) {
-      console.log('🔄 Retry without provider_id...');
-      try {
-        const fallbackEndpoint = `appointments?start_date=${formatAPIDate(getDateRange().startDate)}&end_date=${formatAPIDate(getDateRange().endDate)}`;
-        const fallbackData = await fetchAPI(fallbackEndpoint);
-        
-        let fallbackArray = [];
-        if (Array.isArray(fallbackData)) {
-          fallbackArray = fallbackData;
-        } else if (fallbackData && Array.isArray(fallbackData.data)) {
-          fallbackArray = fallbackData.data;
-        } else {
-          fallbackArray = [];
-        }
-        
-        setAllAppointments(fallbackArray);
-        setAppointments(fallbackArray.filter(apt => apt.status !== 'canceled'));
-        console.log('✅ Fallback successful');
-        setError(null); // Clear error se fallback funziona
-      } catch (fallbackErr) {
-        console.error('❌ Fallback also failed:', fallbackErr);
-      }
-    }
   }
 };
 
@@ -622,7 +618,7 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
           {/* Logo */}
           <div className="topbar-brand">
             <img 
-              src="https://dottori-online.com/wp-content/uploads/2025/04/MAIN-LOGO-DOC_new_mini.webp" 
+              src="https://dottori-online.com/wp-content/uploads/2025/09/Logo-new-mini.png" 
               alt="Dottori Online" 
               className="topbar-logo"
             />
