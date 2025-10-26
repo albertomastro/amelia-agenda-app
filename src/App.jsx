@@ -43,6 +43,20 @@ export default function App() {
   console.log('🔑 Provider ID:', providerId);
   console.log('🔑 Customer ID:', customerId);
 
+  // useEffect per ottenere il nonce WordPress
+  useEffect(() => {
+    // Ottieni il nonce da WordPress
+    fetch('/wp-admin/admin-ajax.php?action=get_nonce')
+      .then(res => res.json())
+      .then(data => {
+        localStorage.setItem('wp_nonce', data.nonce);
+        console.log('✅ WordPress nonce loaded');
+      })
+      .catch(err => {
+        console.error('❌ Errore caricamento nonce:', err);
+      });
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 1024) {
@@ -283,11 +297,15 @@ if (endpoint.includes('?')) {
   url = `${apiUrl}?action=${cleanEndpoint}`;
 }
 console.log('🔧 API Call:', url);
+
+// Ottieni il nonce da localStorage
+const nonce = localStorage.getItem('wp_nonce') || config.nonce;
+
 const response = await fetch(url, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
-          'X-WP-Nonce': config.nonce,
+          'X-WP-Nonce': nonce,
         ...options.headers
         }
       });
@@ -2341,7 +2359,7 @@ const topbarStyles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: 1920px;
+    max-width: 1900px;
     margin: 0 auto;
     padding: 12px 20px;
     height: 60px;
@@ -2439,7 +2457,7 @@ const topbarStyles = `
   /* RESPONSIVE */
   @media (max-width: 768px) {
     .topbar-container {
-      padding: 8px 14px;
+      padding: 8px 16px;
       height: 56px;
     }
     
