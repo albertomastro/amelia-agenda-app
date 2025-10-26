@@ -169,10 +169,10 @@ export default function App() {
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
     Promise.all([
-      fetchAPI('services').then(d => setServices(d.data || [])),
-      fetchAPI('customers').then(d => setCustomers(d.data || [])),
-      fetchAPI('locations').then(d => setLocations(d.data || [])),
-      fetchAPI('stats').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
+      fetchAPI('services&bypass_auth=true').then(d => setServices(d.data || [])),
+      fetchAPI('customers&bypass_auth=true').then(d => setCustomers(d.data || [])),
+      fetchAPI('locations&bypass_auth=true').then(d => setLocations(d.data || [])),
+      fetchAPI('stats&bypass_auth=true').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
     ]).catch(err => console.error('Background load:', err));
     
   } catch (err) {
@@ -221,7 +221,7 @@ export default function App() {
     }
 
     const { startDate, endDate } = getDateRange();
-    const appointmentsData = await fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
+    const appointmentsData = await fetchAPI(`appointments&bypass_auth=true&start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
     
     const allData = appointmentsData.data || [];
     
@@ -438,7 +438,7 @@ const response = await fetch(url, {
     setShowCreateModal(false);
     setCreateModalTime(null);
     await loadAppointments();
-    await fetchAPI('stats').then(d => setStats(d.data || null));
+    await fetchAPI('stats&bypass_auth=true').then(d => setStats(d.data || null));
     
   } catch (err) {
     console.error('Errore reload:', err);
@@ -465,7 +465,7 @@ const response = await fetch(url, {
       
       setSelectedAppointment(null);
       await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
+      await fetchAPI('stats&bypass_auth=true').then(d => setStats(d.data || null));
       
       if (updateData.bookingStart || updateData.bookingEnd) {
         alert('Appuntamento riprogrammato con successo!\n\nIl cliente e il fornitore riceveranno una email di notifica.');
@@ -488,7 +488,7 @@ const response = await fetch(url, {
       await fetchAPI(`/appointments/${appointmentId}`, { method: 'DELETE' });
       setSelectedAppointment(null);
       await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
+      await fetchAPI('stats&bypass_auth=true').then(d => setStats(d.data || null));
       alert('Appuntamento cancellato con successo!');
     } catch (err) {
       alert('Errore cancellazione: ' + err.message);
