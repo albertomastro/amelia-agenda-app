@@ -27,7 +27,7 @@ export default function App() {
   const [showFilteredList, setShowFilteredList] = useState(false);
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
-  // Sistema basato su ruoli WordPress Amelia
+  // Sistema basato su ruoli WordPress Amelia - CORRETTE all'interno del componente
   const [userInfo, setUserInfo] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [providerId, setProviderId] = useState(null);
@@ -43,6 +43,11 @@ export default function App() {
   console.log('🔑 Provider ID:', providerId);
   console.log('🔑 Customer ID:', customerId);
 
+  // useEffect dedicato per caricare le info utente all'avvio
+  useEffect(() => {
+    loadUserInfo();
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth > 1024) {
@@ -54,40 +59,21 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // useEffect dedicato per caricare le info utente all'avvio
+  // useEffect che chiama loadInitialData solo dopo che userInfo è disponibile
   useEffect(() => {
-    loadUserInfo();
-  }, []);
+    if (userInfo) {
+      loadInitialData();
+    }
+  }, [userInfo]);
+
+  useEffect(() => {
+    if (userInfo) {
+      loadAppointments();
+    }
+  }, [selectedDate, view, userInfo]);
 
   const loadUserInfo = async () => {
     try {
-      // MOCK DATA per sviluppo locale
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('🧪 Using MOCK data for local development');
-        const mockUserData = {
-          status: 'success',
-          data: {
-            amelia_role: 'wpamelia-provider',
-            provider_id: 1,
-            customer_id: null,
-            can_create_appointments: true,
-            can_view_all: true,
-            display_name: 'Test Provider'
-          }
-        };
-        
-        const data = mockUserData.data;
-        setUserInfo(data);
-        setUserRole(data.amelia_role);
-        setProviderId(data.provider_id);
-        setCustomerId(data.customer_id);
-        setCanCreateAppointments(data.can_create_appointments);
-        setCanViewAll(data.can_view_all);
-        
-        console.log('✅ Mock user info loaded:', data);
-        return;
-      }
-
       const userData = await fetchAPI('user_info');
       if (userData.status === 'success' && userData.data) {
         const data = userData.data;
@@ -104,43 +90,10 @@ export default function App() {
       }
     } catch (error) {
       console.error('❌ Error loading user info:', error);
-      
-      // Fallback per errori di connessione in locale
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('🔄 Using fallback mock data due to connection error');
-        const fallbackData = {
-          amelia_role: 'wpamelia-provider',
-          provider_id: 1,
-          customer_id: null,
-          can_create_appointments: true,
-          can_view_all: true,
-          display_name: 'Test Provider (Fallback)'
-        };
-        
-        setUserInfo(fallbackData);
-        setUserRole(fallbackData.amelia_role);
-        setProviderId(fallbackData.provider_id);
-        setCustomerId(fallbackData.customer_id);
-        setCanCreateAppointments(fallbackData.can_create_appointments);
-        setCanViewAll(fallbackData.can_view_all);
-      }
     }
   };
 
-  // useEffect che chiama loadInitialData solo dopo che userInfo è disponibile
-  useEffect(() => {
-    if (userInfo) {
-      loadInitialData();
-    }
-  }, [userInfo]);
-
-  useEffect(() => {
-    if (userInfo) {
-      loadAppointments();
-    }
-  }, [selectedDate, view, userInfo]);
-
-  const loadInitialData = async () => {
+const loadInitialData = async () => {
   setLoading(true);
   setError(null);
   
@@ -154,12 +107,36 @@ export default function App() {
     await loadAppointments();
     
     // PRIORITÀ 2: Services + Customers + Locations + STATS (background parallelo)
-    Promise.all([
-      fetchAPI('services').then(d => setServices(d.data || [])),
-      fetchAPI('customers').then(d => setCustomers(d.data || [])),
-      fetchAPI('locations').then(d => setLocations(d.data || [])),
-      fetchAPI('stats').then(d => setStats(d.data || null))  // ← QUESTA RIGA DEVE ESSERCI
-    ]).catch(err => console.error('Background load:', err));
+    // Solo per provider e manager, non per customer
+    if (canCreateAppointments) {
+      Promise.all([
+        fetchAPI('services').then(d => {
+          console.log('📋 Services API response:', d);
+          const servicesArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setServices(servicesArray);
+          return d;
+        }),
+        fetchAPI('customers').then(d => {
+          console.log('👥 Customers API response:', d);
+          const customersArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setCustomers(customersArray);
+          return d;
+        }),
+        fetchAPI('locations').then(d => {
+          console.log('📍 Locations API response:', d);
+          const locationsArray = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
+          setLocations(locationsArray);
+          return d;
+        }),
+        fetchAPI('stats').then(d => {
+          console.log('📊 Stats API response:', d);
+          setStats(d.data || d || null);
+          return d;
+        })
+      ]).catch(err => console.error('Background load:', err));
+    } else {
+      console.log('ℹ️ Customer role - skipping services/customers/locations/stats');
+    }
     
   } catch (err) {
     setError(err.message || 'Errore caricamento dati');
@@ -170,80 +147,39 @@ export default function App() {
 
   const loadAppointments = async () => {
   try {
-    // MOCK DATA per sviluppo locale
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      console.log('🧪 Using MOCK appointments for local development');
-      
-      const today = new Date();
-      const mockAppointments = [
-        {
-          id: 1,
-          bookingStart: today.toISOString().split('T')[0] + ' 09:00:00',
-          bookingEnd: today.toISOString().split('T')[0] + ' 10:00:00',
-          status: 'approved',
-          customer: { name: 'Mario Rossi', email: 'mario@test.com', phone: '123456789' },
-          service: { name: 'Visita Generale', color: '#1A5367' },
-          location: { name: 'Studio Principale' },
-          internalNotes: 'Prima visita'
-        },
-        {
-          id: 2,
-          bookingStart: today.toISOString().split('T')[0] + ' 14:30:00',
-          bookingEnd: today.toISOString().split('T')[0] + ' 15:30:00',
-          status: 'pending',
-          customer: { name: 'Giulia Bianchi', email: 'giulia@test.com', phone: '987654321' },
-          service: { name: 'Consulenza', color: '#22c55e' },
-          location: { name: 'Studio Principale' },
-          internalNotes: 'Controllo di routine'
-        }
-      ];
-      
-      setAllAppointments(mockAppointments);
-      const activeAppointments = mockAppointments.filter(apt => apt.status !== 'canceled');
-      setAppointments(activeAppointments);
-      
-      console.log(`✅ Mock appointments loaded: ${mockAppointments.length} total, ${activeAppointments.length} active`);
-      return;
-    }
-
     const { startDate, endDate } = getDateRange();
-    const appointmentsData = await fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
+    let apiEndpoint = `appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`;
     
-    const allData = appointmentsData.data || [];
+    console.log('📡 API endpoint:', apiEndpoint);
+    const appointmentsData = await fetchAPI(apiEndpoint);
     
-    setAllAppointments(allData); // ← DEVE esserci
+    console.log('📥 Appointments data received:', appointmentsData);
+    
+    let allData = [];
+    if (Array.isArray(appointmentsData)) {
+      allData = appointmentsData;
+    } else if (appointmentsData && Array.isArray(appointmentsData.data)) {
+      allData = appointmentsData.data;
+    } else if (appointmentsData && appointmentsData.data) {
+      allData = [appointmentsData.data];
+    } else {
+      allData = [];
+    }
+    
+    console.log('📊 Processed appointments array:', allData, 'Length:', allData.length);
+    
+    setAllAppointments(allData);
     
     const activeAppointments = allData.filter(apt => apt.status !== 'canceled');
-    setAppointments(activeAppointments); // ← DEVE esserci
+    setAppointments(activeAppointments);
+    
+    console.log(`✅ Loaded ${allData.length} total appointments, ${activeAppointments.length} active`);
+    
   } catch (err) {
-    console.error('Errore caricamento appuntamenti:', err);
-    setError(err.message || 'Errore caricamento appuntamenti');
+    console.error('❌ Errore caricamento appuntamenti:', err);
+    setError(`Errore caricamento appuntamenti: ${err.message}`);
   }
 };
-
-  const loadAllData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { startDate, endDate } = getDateRange();
-      const [appointmentsData, servicesData, customersData, locationsData, statsData] = await Promise.all([
-        fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`),
-        fetchAPI('services'),
-        fetchAPI('customers'),
-        fetchAPI('locations'),
-        fetchAPI('stats')
-      ]);
-      setAppointments(appointmentsData.data || []);
-      setServices(servicesData.data || []);
-      setCustomers(customersData.data || []);
-      setLocations(locationsData.data || []);
-      setStats(statsData.data || null);
-    } catch (err) {
-      setError(err.message || 'Errore caricamento dati');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // MODIFICA 2: Cache sessionStorage in fetchAPI
   const fetchAPI = async (endpoint, options = {}, retries = 2) => {
@@ -269,26 +205,26 @@ export default function App() {
       const timeoutId = setTimeout(() => controller.abort(), 5000); // Timeout 5s
 
       let url;
-if (endpoint.includes('?')) {
-  // Se ha già parametri (es: appointments?start_date=...)
-  const [action, params] = endpoint.split('?');
-  url = `${apiUrl}?action=${action}&${params}`;
-} else if (endpoint.includes('/') && !endpoint.startsWith('/')) {
-  // Se contiene uno slash (es: appointments/123)
-  const [action, id] = endpoint.split('/');
-  url = `${apiUrl}?action=${action}&id=${id}`;
-} else {
-  // Endpoint semplice (es: services)
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
-  url = `${apiUrl}?action=${cleanEndpoint}`;
-}
-console.log('🔧 API Call:', url);
-const response = await fetch(url, {
+      if (endpoint.includes('?')) {
+        // Se ha già parametri (es: appointments?start_date=...)
+        const [action, params] = endpoint.split('?');
+        url = `${apiUrl}?action=${action}&${params}`;
+      } else if (endpoint.includes('/') && !endpoint.startsWith('/')) {
+        // Se contiene uno slash (es: appointments/123)
+        const [action, id] = endpoint.split('/');
+        url = `${apiUrl}?action=${action}&id=${id}`;
+      } else {
+        // Endpoint semplice (es: services)
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+        url = `${apiUrl}?action=${cleanEndpoint}`;
+      }
+      console.log('🔧 API Call:', url);
+      const response = await fetch(url, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
           'X-WP-Nonce': config.nonce,
-        ...options.headers
+          ...options.headers
         }
       });
 
@@ -326,199 +262,186 @@ const response = await fetch(url, {
   };
 
   const formatAPIDate = (date) => {
-    return date.toISOString().slice(0, 19).replace('T', ' ');
+    return date.toISOString().split('T')[0];
   };
 
   const getDateRange = () => {
+    let startDate, endDate;
+    
     if (view === 'day') {
-      const start = new Date(selectedDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(selectedDate);
-      end.setHours(23, 59, 59, 999);
-      return { startDate: start, endDate: end };
+      startDate = new Date(selectedDate);
+      endDate = new Date(selectedDate);
     } else if (view === 'week') {
-      return { startDate: getWeekStart(selectedDate), endDate: getWeekEnd(selectedDate) };
-    } else {
-      return { startDate: getMonthStart(selectedDate), endDate: getMonthEnd(selectedDate) };
+      startDate = new Date(selectedDate);
+      startDate.setDate(selectedDate.getDate() - selectedDate.getDay() + 1); // Lunedì
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6); // Domenica
+    } else if (view === 'month') {
+      startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
     }
+    
+    return { startDate, endDate };
   };
 
-  const getWeekStart = (date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - (day === 0 ? 6 : day - 1);
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
-  const getWeekEnd = (date) => {
-    const d = getWeekStart(date);
-    d.setDate(d.getDate() + 6);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  };
-
-  const getMonthStart = (date) => {
-    const d = new Date(date);
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
-  const getMonthEnd = (date) => {
-    const d = new Date(date);
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(0);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  };
-
-  const getWeekDays = () => {
-    const days = [];
-    const start = getWeekStart(selectedDate);
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + i);
-      days.push(day);
-    }
-    return days;
+  const goToToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentDate(today);
   };
 
   const navigate = (direction) => {
     const newDate = new Date(selectedDate);
+    
     if (view === 'day') {
       newDate.setDate(newDate.getDate() + direction);
     } else if (view === 'week') {
       newDate.setDate(newDate.getDate() + (direction * 7));
-    } else {
+    } else if (view === 'month') {
       newDate.setMonth(newDate.getMonth() + direction);
     }
+    
     setSelectedDate(newDate);
+    if (view === 'month') {
+      setCurrentDate(newDate);
+    }
   };
 
-  const goToToday = () => {
-    setSelectedDate(new Date());
+  const getWeekDays = () => {
+    const startOfWeek = new Date(selectedDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust when Sunday
+    startOfWeek.setDate(diff);
+    
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      return day;
+    });
+  };
+
+  const getFilteredAppointments = () => {
+    if (!filterStatus) return appointments;
+    
+    if (filterStatus === 'today') {
+      const today = new Date().toDateString();
+      return appointments.filter(apt => new Date(apt.bookingStart).toDateString() === today);
+    }
+    
+    if (filterStatus === 'total') {
+      return appointments;
+    }
+    
+    return appointments.filter(apt => apt.status === filterStatus);
   };
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      approved: { label: 'Confermato', color: 'bg-green-100' },
-      pending: { label: 'In Attesa', color: 'bg-yellow-100' },
-      canceled: { label: 'Annullato', color: 'bg-gray-100' },
-      rejected: { label: 'Rifiutato', color: 'bg-gray-100' },
-      'no-show': { label: 'Assente', color: 'bg-orange-100' }
+      'approved': { text: 'Confermato', className: 'status-approved' },
+      'pending': { text: 'In Attesa', className: 'status-pending' },
+      'canceled': { text: 'Annullato', className: 'status-canceled' },
+      'rejected': { text: 'Rifiutato', className: 'status-rejected' },
+      'no-show': { text: 'Assente', className: 'status-no-show' },
     };
-    const config = statusConfig[status] || statusConfig.pending;
-    return <span className={`status-badge ${config.color}`}>{config.label}</span>;
-  };
-
-  const handleCreateAppointment = async () => {
-  try {
-    setLoading(true);
     
-    setShowCreateModal(false);
-    setCreateModalTime(null);
-    await loadAppointments();
-    await fetchAPI('stats').then(d => setStats(d.data || null));
-    
-  } catch (err) {
-    console.error('Errore reload:', err);
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleUpdateAppointment = async (appointmentId, updateData) => {
-    try {
-      setLoading(true);
-      
-      const ameliaUpdateData = {
-        ...updateData,
-        notifyParticipants: 1,
-        sendNotification: true,
-        type: 'appointment'
-      };
-      
-      await fetchAPI(`/appointments/${appointmentId}`, { 
-        method: 'PUT', 
-        body: JSON.stringify(ameliaUpdateData) 
-      });
-      
-      setSelectedAppointment(null);
-      await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
-      
-      if (updateData.bookingStart || updateData.bookingEnd) {
-        alert('Appuntamento riprogrammato con successo!\n\nIl cliente e il fornitore riceveranno una email di notifica.');
-      } else if (updateData.status) {
-        alert('Stato appuntamento aggiornato con successo!\n\nIl cliente riceverà una email di notifica.');
-      } else {
-        alert('Appuntamento aggiornato con successo!');
-      }
-    } catch (err) {
-      alert('Errore aggiornamento: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancelAppointment = async (appointmentId) => {
-    if (!confirm('Sei sicuro di voler cancellare questo appuntamento?')) return;
-    try {
-      setLoading(true);
-      await fetchAPI(`/appointments/${appointmentId}`, { method: 'DELETE' });
-      setSelectedAppointment(null);
-      await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
-      alert('Appuntamento cancellato con successo!');
-    } catch (err) {
-      alert('Errore cancellazione: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    const config = statusConfig[status] || { text: status, className: 'status-default' };
+    return <span className={`status-badge ${config.className}`}>{config.text}</span>;
   };
 
   const handleSlotClick = (day, hour) => {
-    const slotDate = new Date(day);
-    slotDate.setHours(hour, 0, 0, 0);
-    setCreateModalTime(slotDate);
+    if (!canCreateAppointments) {
+      console.log('ℹ️ Customer role cannot create appointments');
+      return;
+    }
+    
+    const dateTime = new Date(day);
+    dateTime.setHours(hour, 0, 0, 0);
+    setCreateModalTime(dateTime);
     setShowCreateModal(true);
   };
 
-  const handleStatCardClick = (status) => {
-    setFilterStatus(status);
+  const handleCreateAppointment = async (appointmentData) => {
+    try {
+      await onCreate(appointmentData);
+      loadAppointments();
+    } catch (error) {
+      console.error('Errore creazione appuntamento:', error);
+    }
+  };
+
+  const handleUpdateAppointment = async (id, updates) => {
+    try {
+      const response = await fetchAPI(`appointments/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates)
+      });
+      
+      if (response.status === 'success') {
+        loadAppointments();
+        if (selectedAppointment && selectedAppointment.id === id) {
+          setSelectedAppointment({ ...selectedAppointment, ...updates });
+        }
+      }
+    } catch (error) {
+      console.error('Errore aggiornamento appuntamento:', error);
+    }
+  };
+
+  const handleCancelAppointment = async (id) => {
+    if (!confirm('Sei sicuro di voler cancellare questo appuntamento?')) return;
+    
+    try {
+      const response = await fetchAPI(`appointments/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.status === 'success') {
+        loadAppointments();
+        setSelectedAppointment(null);
+      }
+    } catch (error) {
+      console.error('Errore cancellazione appuntamento:', error);
+    }
+  };
+
+  const handleStatCardClick = (filterType) => {
+    setFilterStatus(filterType);
     setShowFilteredList(true);
   };
 
-  const getFilteredAppointments = () => {
-  const today = new Date().toISOString().split('T')[0];
-  
-  switch(filterStatus) {
-    case 'today':
-      return allAppointments.filter(apt => 
-        apt.bookingStart.startsWith(today) && apt.status === 'approved'
-      );
-    case 'total':
-      return allAppointments; // ✅ 
-    case 'approved':
-      return allAppointments.filter(apt => apt.status === 'approved');
-    case 'pending':
-      return allAppointments.filter(apt => apt.status === 'pending');
-    case 'canceled':
-      return allAppointments.filter(apt => apt.status === 'canceled'); // ✅
-    case 'rejected':
-      return allAppointments.filter(apt => apt.status === 'rejected');
-    default:
-      return allAppointments;
-  }
-};
-
-  if (loading && appointments.length === 0) {
+  if (loading) {
     return (
-      <div className="fantastical-app">
-        <div className="fantastical-header" style={{ opacity: 0.5 }}>
-          <div style={{ height: '100px', background: 'var(--gray-100)', borderRadius: '12px', animation: 'pulse 1.5s infinite' }}></div>
+      <div className="loading-container">
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          gap: '24px'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            border: '4px solid #e5e7eb',
+            borderTopColor: '#1A5367',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <p style={{ color: '#6b7280', fontSize: '18px' }}>Caricamento calendario...</p>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#1A5367',
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Ricarica senza Provider
+          </button>
         </div>
       </div>
     );
@@ -630,10 +553,10 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
       {/* 🆕 TOPBAR AZIENDALE */}
       <div className="topbar">
         <div className="topbar-container">
-          {/* Logo e Brand */}
+          {/* Logo */}
           <div className="topbar-brand">
             <img 
-              src="https://dottori-online.com/wp-content/uploads/2024/11/cropped-Logo-new.webp" 
+              src="https://dottori-online.com/wp-content/uploads/2025/09/Logo-new-mini.png" 
               alt="Dottori Online" 
               className="topbar-logo"
             />
@@ -680,10 +603,10 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
           </button>
         </div>
 
-        {(stats || true) && (
+        {stats && (
           <div className="stats-grid">
             <div className="stat-card stat-today clickable" onClick={() => onStatCardClick('today')}>
-              <div className="stat-value">{stats?.appointments_today || 0}</div>
+              <div className="stat-value">{todayApprovedCount}</div>
               <div className="stat-label">Oggi</div>
             </div>
             <div className="stat-card clickable" onClick={() => onStatCardClick('total')}>
@@ -1676,7 +1599,8 @@ const handleMonthChange = async (date) => {
     if (prev.serviceId) {
       const service = services.find(s => String(s.id) === String(prev.serviceId));
       if (service && service.duration) {
-        const endDate = new Date(localDate.getTime() + (service.duration * 60 * 1000));
+        // service.duration è già in secondi (da Amelia)
+        const endDate = new Date(localDate.getTime() + (service.duration * 1000));
         
         const endYear = endDate.getFullYear();
         const endMonth = String(endDate.getMonth() + 1).padStart(2, '0');
@@ -1843,14 +1767,22 @@ const handleCreateCustomer = async () => {
       }
       
       const result = await response.json();
+      console.log('📥 Response creazione cliente:', result);
+      
+      // L'API può restituire sia result.data che result diretto
+      const customerData = result.data || result;
+      
+      if (!customerData || !customerData.id) {
+        throw new Error('Risposta API incompleta - manca ID cliente');
+      }
       
       const newCustomer = {
-        id: result.data.id,
-        firstName: result.data.firstName,
-        lastName: result.data.lastName,
-        email: result.data.email,
-        phone: result.data.phone,
-        name: `${result.data.firstName} ${result.data.lastName}`
+        id: customerData.id,
+        firstName: customerData.firstName,
+        lastName: customerData.lastName,
+        email: customerData.email,
+        phone: customerData.phone,
+        name: `${customerData.firstName} ${customerData.lastName}`
       };
       
       setCustomers(prev => {
@@ -1893,180 +1825,107 @@ const handleCreateCustomer = async () => {
   // Raggruppa slot per periodo del giorno
   const groupSlotsByPeriod = () => {
     const periods = {
-      morning: { label: 'Mattina (07:00-12:00)', slots: [] },
-      afternoon: { label: 'Pomeriggio (12:00-18:00)', slots: [] },
-      evening: { label: 'Sera (18:00-21:00)', slots: [] }
+      'Mattina': [],
+      'Pomeriggio': [],
+      'Sera': []
     };
 
     availableSlots.forEach(slot => {
-      const hour = parseInt(slot.time.split(':')[0]);
+      const date = new Date(slot);
+      const hour = date.getHours();
       
       if (hour < 12) {
-        periods.morning.slots.push(slot);
+        periods['Mattina'].push(slot);
       } else if (hour < 18) {
-        periods.afternoon.slots.push(slot);
+        periods['Pomeriggio'].push(slot);
       } else {
-        periods.evening.slots.push(slot);
+        periods['Sera'].push(slot);
       }
     });
 
     return periods;
   };
-  
+
+  const renderTimeSlots = () => {
+    if (loadingSlots) {
+      return (
+        <div className="loading-slots">
+          <div className="loading-spinner"></div>
+          <p>Caricamento slot disponibili...</p>
+        </div>
+      );
+    }
+
+    if (availableSlots.length === 0) {
+      return (
+        <div className="no-slots">
+          <Clock size={48} />
+          <p>Nessuno slot disponibile per questa data</p>
+          <p>Prova a selezionare un altro giorno</p>
+        </div>
+      );
+    }
+
+    const periods = groupSlotsByPeriod();
+
+    return (
+      <div className="time-slots-container">
+        {Object.entries(periods).map(([period, slots]) => {
+          if (slots.length === 0) return null;
+          
+          return (
+            <div key={period} className="time-period">
+              <div className="period-label">{period}</div>
+              <div className="slots-grid">
+                {slots.map(slot => (
+                  <button
+                    key={slot}
+                    type="button"
+                    className={`time-slot ${formData.bookingStart.startsWith(slot.split(' ')[0]) && 
+                      formData.bookingStart.includes(slot.split(' ')[1]) ? 'selected' : ''}`}
+                    onClick={() => handleTimeSelect(slot)}
+                  >
+                    {new Date(slot).toLocaleTimeString('it-IT', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
+      <div className="modal-content create-appointment">
         <div className="modal-header">
           <h2>Nuovo Appuntamento</h2>
           <button onClick={onClose} className="modal-close">
             <X size={24} />
           </button>
         </div>
-        
-        <form onSubmit={handleSubmit} className="modal-form">
+
+        <form onSubmit={handleSubmit}>
           {paymentLink ? (
-            // Mostra Payment Link
-            <div style={{ textAlign: 'center' }}>
-              {/* ... codice payment link esistente ... */}
+            <div className="payment-success">
+              <div className="success-icon">✅</div>
+              <h3>Appuntamento Creato!</h3>
+              <p>Link di pagamento generato:</p>
+              <div className="payment-link">
+                <input type="text" value={paymentLink} readOnly />
+                <button type="button" onClick={() => navigator.clipboard.writeText(paymentLink)}>
+                  Copia Link
+                </button>
+              </div>
+              <p>Invia questo link al cliente per completare il pagamento.</p>
+              <button type="button" onClick={onClose} className="btn-primary">Chiudi</button>
             </div>
           ) : (
             <>
-              {/* Cliente */}
-              <div className="form-group">
-                <div className="form-label-row">
-                  <label>Paziente *</label>
-                  <button 
-                    type="button"
-                    className="btn-new-customer"
-                    onClick={() => setShowNewCustomer(!showNewCustomer)}
-                  >
-                    <Plus size={16} />
-                    Nuovo Paziente
-                  </button>
-                </div>
-                
-                {!showNewCustomer ? (
-                  <select 
-                    value={formData.customerId} 
-                    onChange={(e) => setFormData(prev => ({ ...prev, customerId: e.target.value }))} 
-                    required
-                  >
-                    <option value="">Seleziona paziente</option>
-                    {customers.map(customer => (
-                      <option key={customer.id} value={customer.id}>{customer.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="new-customer-form">
-                    // FORM crea paziente COMPLETO:
-<div className="new-customer-form">
-  <h3>Crea Nuovo Paziente</h3>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Nome *</label>
-      <input
-        type="text"
-        value={newCustomerData.firstName}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, firstName: e.target.value }))}
-        placeholder="Nome"
-        required
-      />
-    </div>
-    
-    <div className="form-group">
-      <label>Cognome *</label>
-      <input
-        type="text"
-        value={newCustomerData.lastName}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, lastName: e.target.value }))}
-        placeholder="Cognome"
-        required
-      />
-    </div>
-  </div>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Email *</label>
-      <input
-        type="email"
-        value={newCustomerData.email}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, email: e.target.value }))}
-        placeholder="email@esempio.com"
-        required
-      />
-    </div>
-    
-    <div className="form-group">
-      <label>Telefono *</label>
-      <input
-        type="tel"
-        value={newCustomerData.phone}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, phone: e.target.value }))}
-        placeholder="+39 000 000 0000"
-        required
-      />
-    </div>
-  </div>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Genere</label>
-      <select
-        value={newCustomerData.gender}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, gender: e.target.value }))}
-      >
-        <option value="">Seleziona genere</option>
-        <option value="male">Maschio</option>
-        <option value="female">Femmina</option>
-        <option value="other">Altro</option>
-        <option value="not-specified">Non specificato</option>
-      </select>
-    </div>
-    
-    <div className="form-group">
-      <label>Data di nascita</label>
-      <input
-        type="date"
-        value={newCustomerData.dateOfBirth}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-      />
-    </div>
-  </div>
-  
-  <div className="form-group">
-    <label>Note</label>
-    <textarea
-      value={newCustomerData.note}
-      onChange={(e) => setNewCustomerData(prev => ({ ...prev, note: e.target.value }))}
-      placeholder="Note aggiuntive sul paziente..."
-      rows="3"
-    />
-  </div>
-  
-  <div className="customer-form-actions">
-    <button
-      type="button"
-      className="btn-cancel"
-      onClick={() => setShowNewCustomer(false)}
-    >
-      Annulla
-    </button>
-    <button
-      type="button"
-      className="btn-create-customer"
-      onClick={handleCreateCustomer}
-    >
-      <User size={16} />
-      Crea Paziente
-    </button>
-  </div>
-</div>
-                  </div>
-                )}
-              </div>
-              
               {/* Servizio */}
               <div className="form-group">
                 <label>Servizio *</label>
@@ -2078,131 +1937,148 @@ const handleCreateCustomer = async () => {
                   <option value="">Seleziona servizio</option>
                   {services.map(service => (
                     <option key={service.id} value={service.id}>
-                      {service.name} ({service.duration} min - €{service.price})
+                      {service.name} - €{service.price} ({service.duration/60}min)
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               {/* Location */}
-<div className="form-group">
-  <label>Luogo *</label>
-  <select 
-    value={formData.locationId} 
-    onChange={(e) => {
-      setFormData(prev => ({ 
-        ...prev, 
-        locationId: e.target.value, 
-        bookingStart: '', 
-        bookingEnd: '' 
-      }));
-      setSelectedDate(null);
-      setAvailableDays([]);
-      setAvailableDaysCache({});
-    }}
-    required
-  >
-    <option value="">Seleziona un luogo</option>
-    {locations.map(location => (
-      <option key={location.id} value={location.id}>
-        {location.name}
-      </option>
-    ))}
-  </select>
-</div>
-              
-{/* Date Picker */}
-{formData.serviceId && formData.locationId && (
-  <div className="form-group">
-    <label>Seleziona Data *</label>
-    <DatePicker
-      selected={selectedDate}
-      onChange={handleDateChange}
-      onMonthChange={handleMonthChange}
-      dateFormat="dd/MM/yyyy"
-      locale="it"
-      minDate={new Date()}
-      filterDate={filterDate}
-      highlightDates={availableDays.map(d => new Date(d + 'T12:00:00'))}
-      inline
-    />
-  </div>
-)}
-              {/* Time Picker con Slot Disponibili */}
-              {selectedDate && formData.serviceId && formData.locationId && (
+              <div className="form-group">
+                <label>Luogo *</label>
+                <select 
+                  value={formData.locationId} 
+                  onChange={(e) => setFormData(prev => ({ ...prev, locationId: e.target.value }))}
+                  required
+                >
+                  <option value="">Seleziona luogo</option>
+                  {locations.map(location => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Data e Ora */}
+              {formData.serviceId && formData.locationId && (
+                <div className="form-group">
+                  <label>Data *</label>
+                  <DatePicker
+                    selected={selectedDate}
+                    onChange={handleDateChange}
+                    onMonthChange={handleMonthChange}
+                    filterDate={filterDate}
+                    locale="it"
+                    dateFormat="dd/MM/yyyy"
+                    minDate={new Date()}
+                    placeholderText="Seleziona una data"
+                    className="date-input"
+                    inline
+                  />
+                </div>
+              )}
+
+              {/* Time Picker */}
+              {showTimePicker && (
                 <div className="form-group">
                   <label>Orario Disponibile *</label>
-                  
-                  {loadingSlots ? (
-                    <div style={{ textAlign: 'center', padding: '20px' }}>
-                      <div className="loading-spinner"></div>
-                      <p>Caricamento orari disponibili...</p>
-                    </div>
-                  ) : availableSlots.length === 0 ? (
-                    <div style={{ 
-                      padding: '20px', 
-                      background: '#fef2f2', 
-                      borderRadius: '8px', 
-                      textAlign: 'center',
-                      color: '#dc2626'
-                    }}>
-                      <AlertCircle size={24} style={{ margin: '0 auto 10px' }} />
-                      <p>Nessuno slot disponibile per questa data</p>
-                      <small>Seleziona un'altra data</small>
-                    </div>
-                  ) : (
-                    <div className="time-slots-container">
-                      {Object.entries(groupSlotsByPeriod()).map(([key, period]) => {
-                        if (period.slots.length === 0) return null;
+                  {renderTimeSlots()}
+                </div>
+              )}
 
-                        return (
-                          <div key={key} className="time-period">
-                            <div className="period-label">{period.label}</div>
-                            <div className="slots-grid">
-                              {period.slots.map((slot, index) => (
-                                <button
-                                  key={index}
-                                  type="button"
-                                  className={`time-slot ${formData.bookingStart === slot.datetime ? 'selected' : ''}`}
-                                  onClick={() => handleTimeSelect(slot.datetime)}
-                                >
-                                  {slot.time}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  
-                  {formData.bookingStart && (
-                    <div style={{ 
-                      marginTop: '15px', 
-                      padding: '12px', 
-                      background: '#dcfce7', 
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      <Clock size={18} style={{ color: '#16a34a' }} />
-                      <span style={{ color: '#15803d', fontWeight: '600' }}>
-                        Orario selezionato: {new Date(formData.bookingStart).toLocaleString('it-IT', {
-                          day: '2-digit',
-                          month: 'long',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
+              {/* Cliente */}
+              {formData.bookingStart && (
+                <div className="form-group">
+                  <label>Cliente *</label>
+                  <div className="customer-selection">
+                    <select 
+                      value={formData.customerId} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, customerId: e.target.value }))}
+                      required={!showNewCustomer}
+                    >
+                      <option value="">Seleziona cliente esistente</option>
+                      {customers.map(customer => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name || `${customer.firstName} ${customer.lastName}`} - {customer.email}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => setShowNewCustomer(!showNewCustomer)} className="btn-secondary">
+                      {showNewCustomer ? 'Seleziona Esistente' : 'Nuovo Cliente'}
+                    </button>
+                  </div>
+
+                  {/* Form Nuovo Cliente */}
+                  {showNewCustomer && (
+                    <div className="new-customer-form">
+                      <h4>Dati Nuovo Cliente</h4>
+                      <div className="form-row">
+                        <input
+                          type="text"
+                          placeholder="Nome *"
+                          value={newCustomerData.firstName}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, firstName: e.target.value }))}
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Cognome *"
+                          value={newCustomerData.lastName}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, lastName: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="form-row">
+                        <input
+                          type="email"
+                          placeholder="Email *"
+                          value={newCustomerData.email}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, email: e.target.value }))}
+                          required
+                        />
+                        <input
+                          type="tel"
+                          placeholder="Telefono *"
+                          value={newCustomerData.phone}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, phone: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="form-row">
+                        <select
+                          value={newCustomerData.gender}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, gender: e.target.value }))}
+                        >
+                          <option value="">Seleziona genere</option>
+                          <option value="male">Maschio</option>
+                          <option value="female">Femmina</option>
+                          <option value="other">Altro</option>
+                        </select>
+                        <input
+                          type="date"
+                          placeholder="Data di nascita"
+                          value={newCustomerData.dateOfBirth}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                        />
+                      </div>
+                      <textarea
+                        placeholder="Note aggiuntive"
+                        value={newCustomerData.note}
+                        onChange={(e) => setNewCustomerData(prev => ({ ...prev, note: e.target.value }))}
+                        rows="3"
+                      />
+                      <button type="button" onClick={handleCreateCustomer} className="btn-primary">
+                        Crea e Seleziona Cliente
+                      </button>
                     </div>
                   )}
                 </div>
               )}
-              
+
               {/* Checkbox Pagamento */}
               <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.requirePayment}
@@ -2341,9 +2217,9 @@ const topbarStyles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: 1920px;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: 12px 20px;
+    padding: 12px 24px;
     height: 60px;
   }
   
@@ -2351,22 +2227,14 @@ const topbarStyles = `
   .topbar-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
     flex-shrink: 0;
   }
   
   .topbar-logo {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     object-fit: contain;
-    border-radius: 6px;
-  }
-  
-  .topbar-brand-text {
-    font-size: 18px;
-    font-weight: 600;
-    color: #0F5665;
-    letter-spacing: -0.025em;
+    border-radius: 8px;
   }
   
   /* NAVIGATION */
@@ -2439,12 +2307,8 @@ const topbarStyles = `
   /* RESPONSIVE */
   @media (max-width: 768px) {
     .topbar-container {
-      padding: 8px 14px;
+      padding: 8px 16px;
       height: 56px;
-    }
-    
-    .topbar-brand-text {
-      display: none;
     }
     
     .topbar-nav {

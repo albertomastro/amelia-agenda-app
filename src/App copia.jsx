@@ -27,21 +27,9 @@ export default function App() {
   const [showFilteredList, setShowFilteredList] = useState(false);
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
-  // Sistema basato su ruoli WordPress Amelia
-  const [userInfo, setUserInfo] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-  const [providerId, setProviderId] = useState(null);
-  const [customerId, setCustomerId] = useState(null);
-  const [canCreateAppointments, setCanCreateAppointments] = useState(false);
-  const [canViewAll, setCanViewAll] = useState(false);
-
   const config = window.ameliaCalendarData || {};
   const apiUrl = import.meta.env.VITE_API_URL || 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
-
-  console.log('👤 User Role:', userRole);
-  console.log('🔑 Provider ID:', providerId);
-  console.log('🔑 Customer ID:', customerId);
 
   useEffect(() => {
     const handleResize = () => {
@@ -54,102 +42,19 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // useEffect dedicato per caricare le info utente all'avvio
   useEffect(() => {
-    loadUserInfo();
+    loadInitialData();
   }, []);
 
-  const loadUserInfo = async () => {
-    try {
-      // MOCK DATA per sviluppo locale
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('🧪 Using MOCK data for local development');
-        const mockUserData = {
-          status: 'success',
-          data: {
-            amelia_role: 'wpamelia-provider',
-            provider_id: 1,
-            customer_id: null,
-            can_create_appointments: true,
-            can_view_all: true,
-            display_name: 'Test Provider'
-          }
-        };
-        
-        const data = mockUserData.data;
-        setUserInfo(data);
-        setUserRole(data.amelia_role);
-        setProviderId(data.provider_id);
-        setCustomerId(data.customer_id);
-        setCanCreateAppointments(data.can_create_appointments);
-        setCanViewAll(data.can_view_all);
-        
-        console.log('✅ Mock user info loaded:', data);
-        return;
-      }
-
-      const userData = await fetchAPI('user_info');
-      if (userData.status === 'success' && userData.data) {
-        const data = userData.data;
-        setUserInfo(data);
-        setUserRole(data.amelia_role);
-        setProviderId(data.provider_id);
-        setCustomerId(data.customer_id);
-        setCanCreateAppointments(data.can_create_appointments);
-        setCanViewAll(data.can_view_all);
-        
-        console.log('✅ User info loaded:', data);
-      } else {
-        console.error('❌ User info failed:', userData);
-      }
-    } catch (error) {
-      console.error('❌ Error loading user info:', error);
-      
-      // Fallback per errori di connessione in locale
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('🔄 Using fallback mock data due to connection error');
-        const fallbackData = {
-          amelia_role: 'wpamelia-provider',
-          provider_id: 1,
-          customer_id: null,
-          can_create_appointments: true,
-          can_view_all: true,
-          display_name: 'Test Provider (Fallback)'
-        };
-        
-        setUserInfo(fallbackData);
-        setUserRole(fallbackData.amelia_role);
-        setProviderId(fallbackData.provider_id);
-        setCustomerId(fallbackData.customer_id);
-        setCanCreateAppointments(fallbackData.can_create_appointments);
-        setCanViewAll(fallbackData.can_view_all);
-      }
-    }
-  };
-
-  // useEffect che chiama loadInitialData solo dopo che userInfo è disponibile
   useEffect(() => {
-    if (userInfo) {
-      loadInitialData();
-    }
-  }, [userInfo]);
-
-  useEffect(() => {
-    if (userInfo) {
-      loadAppointments();
-    }
-  }, [selectedDate, view, userInfo]);
+    loadAppointments();
+  }, [selectedDate, view]);
 
   const loadInitialData = async () => {
   setLoading(true);
   setError(null);
   
   try {
-    // Aspetta che userInfo sia caricato
-    if (!userInfo) {
-      await loadUserInfo();
-    }
-    
     // PRIORITÀ 1: Appuntamenti (bloccante)
     await loadAppointments();
     
@@ -170,42 +75,6 @@ export default function App() {
 
   const loadAppointments = async () => {
   try {
-    // MOCK DATA per sviluppo locale
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      console.log('🧪 Using MOCK appointments for local development');
-      
-      const today = new Date();
-      const mockAppointments = [
-        {
-          id: 1,
-          bookingStart: today.toISOString().split('T')[0] + ' 09:00:00',
-          bookingEnd: today.toISOString().split('T')[0] + ' 10:00:00',
-          status: 'approved',
-          customer: { name: 'Mario Rossi', email: 'mario@test.com', phone: '123456789' },
-          service: { name: 'Visita Generale', color: '#1A5367' },
-          location: { name: 'Studio Principale' },
-          internalNotes: 'Prima visita'
-        },
-        {
-          id: 2,
-          bookingStart: today.toISOString().split('T')[0] + ' 14:30:00',
-          bookingEnd: today.toISOString().split('T')[0] + ' 15:30:00',
-          status: 'pending',
-          customer: { name: 'Giulia Bianchi', email: 'giulia@test.com', phone: '987654321' },
-          service: { name: 'Consulenza', color: '#22c55e' },
-          location: { name: 'Studio Principale' },
-          internalNotes: 'Controllo di routine'
-        }
-      ];
-      
-      setAllAppointments(mockAppointments);
-      const activeAppointments = mockAppointments.filter(apt => apt.status !== 'canceled');
-      setAppointments(activeAppointments);
-      
-      console.log(`✅ Mock appointments loaded: ${mockAppointments.length} total, ${activeAppointments.length} active`);
-      return;
-    }
-
     const { startDate, endDate } = getDateRange();
     const appointmentsData = await fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`);
     
@@ -637,23 +506,32 @@ function Header({ stats, onNewAppointment, sidebarOpen, onToggleSidebar, onStatC
               alt="Dottori Online" 
               className="topbar-logo"
             />
+            <span className="topbar-brand-text">Dottori Online</span>
           </div>
           
           {/* Navigazione Desktop */}
           <nav className="topbar-nav">
-            <a href="https://dottori-online.com/bacheca-di-comunita/" className="topbar-nav-link">
+            <a href="https://dottori-online.com" className="topbar-nav-link">
+              <Calendar size={16} />
+              <span>Home</span>
+            </a>
+            <a href="https://dottori-online.com/bacheca-di-comunita" className="topbar-nav-link">
               <User size={16} />
-              <span>Bacheca di Comunità</span>
+              <span>Comunità</span>
+            </a>
+            <a href="https://dottori-online.com/visita-medica-online" className="topbar-nav-link">
+              <Plus size={16} />
+              <span>Prenota</span>
             </a>
           </nav>
           
           {/* Menu Utente */}
           <div className="topbar-user">
-            <a href="https://dottori-online.com/membri/me/profile/" className="topbar-user-btn">
+            <button className="topbar-user-btn">
               <User size={20} />
-              <span className="topbar-user-text">Il Mio Profilo</span>
+              <span className="topbar-user-text">Il Mio Account</span>
               <ChevronRight size={16} className="topbar-chevron" />
-            </a>
+            </button>
           </div>
         </div>
       </div>
@@ -2341,9 +2219,9 @@ const topbarStyles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: 1920px;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: 12px 20px;
+    padding: 12px 24px;
     height: 60px;
   }
   
@@ -2356,8 +2234,8 @@ const topbarStyles = `
   }
   
   .topbar-logo {
-    width: 42px;
-    height: 42px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
     border-radius: 6px;
   }
@@ -2439,7 +2317,7 @@ const topbarStyles = `
   /* RESPONSIVE */
   @media (max-width: 768px) {
     .topbar-container {
-      padding: 8px 14px;
+      padding: 8px 16px;
       height: 56px;
     }
     
