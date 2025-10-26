@@ -43,19 +43,6 @@ export default function App() {
   console.log('🔑 Provider ID:', providerId);
   console.log('🔑 Customer ID:', customerId);
 
-  // useEffect per ottenere il nonce WordPress
-  useEffect(() => {
-    // Ottieni il nonce da WordPress
-    fetch('/wp-admin/admin-ajax.php?action=get_nonce')
-      .then(res => res.json())
-      .then(data => {
-        localStorage.setItem('wp_nonce', data.nonce);
-        console.log('✅ WordPress nonce loaded');
-      })
-      .catch(err => {
-        console.error('❌ Errore caricamento nonce:', err);
-      });
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
