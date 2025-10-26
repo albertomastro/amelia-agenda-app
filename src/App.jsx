@@ -27,21 +27,26 @@ export default function App() {
   const [showFilteredList, setShowFilteredList] = useState(false);
   const [allAppointments, setAllAppointments] = useState([]); // ← QUESTA RIGA DEVE ESSERCI
 
+  // Sistema basato su ruoli WordPress Amelia - CORRETTE all'interno del componente
+  const [userInfo, setUserInfo] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [providerId, setProviderId] = useState(null);
+  const [customerId, setCustomerId] = useState(null);
+  const [canCreateAppointments, setCanCreateAppointments] = useState(false);
+  const [canViewAll, setCanViewAll] = useState(false);
+
   const config = window.ameliaCalendarData || {};
   const apiUrl = import.meta.env.VITE_API_URL || 'https://dottori-online.com/amelia-api.php';
   console.log('🔧 API URL configurato:', apiUrl);
 
-  // Sistema basato su ruoli WordPress Amelia
-const [userInfo, setUserInfo] = useState(null);
-const [userRole, setUserRole] = useState(null);
-const [providerId, setProviderId] = useState(null);
-const [customerId, setCustomerId] = useState(null);
-const [canCreateAppointments, setCanCreateAppointments] = useState(false);
-const [canViewAll, setCanViewAll] = useState(false);
+  console.log('👤 User Role:', userRole);
+  console.log('🔑 Provider ID:', providerId);
+  console.log('🔑 Customer ID:', customerId);
 
-console.log('👤 User Role:', userRole);
-console.log('🔑 Provider ID:', providerId);
-console.log('🔑 Customer ID:', customerId);
+  // useEffect dedicato per caricare le info utente all'avvio
+  useEffect(() => {
+    loadUserInfo();
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -54,43 +59,45 @@ console.log('🔑 Customer ID:', customerId);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // useEffect che chiama loadInitialData solo dopo che userInfo è disponibile
   useEffect(() => {
-    loadInitialData();
-  }, []);
-  const loadUserInfo = async () => {
-  try {
-    const userData = await fetchAPI('user_info');
-    if (userData.status === 'success' && userData.data) {
-      const data = userData.data;
-      setUserInfo(data);
-      setUserRole(data.amelia_role);
-      setProviderId(data.provider_id);
-      setCustomerId(data.customer_id);
-      setCanCreateAppointments(data.can_create_appointments);
-      setCanViewAll(data.can_view_all);
-      
-      console.log('✅ User info loaded:', data);
-    } else {
-      console.error('❌ User info failed:', userData);
+    if (userInfo) {
+      loadInitialData();
     }
-  } catch (error) {
-    console.error('❌ Error loading user info:', error);
-  }
-};
+  }, [userInfo]);
+
   useEffect(() => {
-    loadAppointments();
-  }, [selectedDate, view]);
+    if (userInfo) {
+      loadAppointments();
+    }
+  }, [selectedDate, view, userInfo]);
+
+  const loadUserInfo = async () => {
+    try {
+      const userData = await fetchAPI('user_info');
+      if (userData.status === 'success' && userData.data) {
+        const data = userData.data;
+        setUserInfo(data);
+        setUserRole(data.amelia_role);
+        setProviderId(data.provider_id);
+        setCustomerId(data.customer_id);
+        setCanCreateAppointments(data.can_create_appointments);
+        setCanViewAll(data.can_view_all);
+        
+        console.log('✅ User info loaded:', data);
+      } else {
+        console.error('❌ User info failed:', userData);
+      }
+    } catch (error) {
+      console.error('❌ Error loading user info:', error);
+    }
+  };
 
 const loadInitialData = async () => {
   setLoading(true);
   setError(null);
   
   try {
-    // Aspetta che userInfo sia caricato
-    if (!userInfo) {
-      await loadUserInfo();
-    }
-    
     // PRIORITÀ 1: Appuntamenti (bloccante)
     await loadAppointments();
     
@@ -169,27 +176,83 @@ const loadInitialData = async () => {
   }
 };
 
-  const loadAllData = async () => {
-    setLoading(true);
-    setError(null);
+  // MODIFICA 2: Cache sessionStorage in fetchAPI
+  const fetchAPI = async (endpoint, options = {}, retries = 2) => {
+    const cacheKey = `apc_cache_${endpoint}`;
+    
+    // Cache per GET requests
+    if (!options.method || options.method === 'GET') {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 120000) { // 2 minuti
+            return data;
+          }
+        } catch (e) {
+          sessionStorage.removeItem(cacheKey);
+        }
+      }
+    }
+    
     try {
-      const { startDate, endDate } = getDateRange();
-      const [appointmentsData, servicesData, customersData, locationsData, statsData] = await Promise.all([
-        fetchAPI(`appointments?start_date=${formatAPIDate(startDate)}&end_date=${formatAPIDate(endDate)}`),
-        fetchAPI('services'),
-        fetchAPI('customers'),
-        fetchAPI('locations'),
-        fetchAPI('stats')
-      ]);
-      setAppointments(appointmentsData.data || []);
-      setServices(servicesData.data || []);
-      setCustomers(customersData.data || []);
-      setLocations(locationsData.data || []);
-      setStats(statsData.data || null);
-    } catch (err) {
-      setError(err.message || 'Errore caricamento dati');
-    } finally {
-      setLoading(false);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // Timeout 5s
+
+      let url;
+      if (endpoint.includes('?')) {
+        // Se ha già parametri (es: appointments?start_date=...)
+        const [action, params] = endpoint.split('?');
+        url = `${apiUrl}?action=${action}&${params}`;
+      } else if (endpoint.includes('/') && !endpoint.startsWith('/')) {
+        // Se contiene uno slash (es: appointments/123)
+        const [action, id] = endpoint.split('/');
+        url = `${apiUrl}?action=${action}&id=${id}`;
+      } else {
+        // Endpoint semplice (es: services)
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+        url = `${apiUrl}?action=${cleanEndpoint}`;
+      }
+      console.log('🔧 API Call:', url);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': config.nonce,
+          ...options.headers
+        }
+      });
+
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if ((response.status === 508 || response.status === 503) && retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms;
+          return fetchAPI(endpoint, options, retries - 1);
+        }
+        const errorData = await response.json().catch(() => ({ message: 'Errore API' }));
+        throw new Error(errorData.message || `Errore ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Salva cache solo GET
+      if (!options.method || options.method === 'GET') {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            data,
+            timestamp: Date.now()
+          }));
+        } catch (e) {} // Quota exceeded
+      }
+      
+      return data;
+    } catch (error) {
+      if (retries > 0 && (error.message.includes('508') || error.message.includes('503'))) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return fetchAPI(endpoint, options, retries - 1);
+      }
+      throw error;
     }
   };
 
@@ -274,228 +337,178 @@ const response = await fetch(url, {
   };
 
   const formatAPIDate = (date) => {
-    return date.toISOString().slice(0, 19).replace('T', ' ');
+    return date.toISOString().split('T')[0];
   };
 
   const getDateRange = () => {
+    let startDate, endDate;
+    
     if (view === 'day') {
-      const start = new Date(selectedDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(selectedDate);
-      end.setHours(23, 59, 59, 999);
-      return { startDate: start, endDate: end };
+      startDate = new Date(selectedDate);
+      endDate = new Date(selectedDate);
     } else if (view === 'week') {
-      return { startDate: getWeekStart(selectedDate), endDate: getWeekEnd(selectedDate) };
-    } else {
-      return { startDate: getMonthStart(selectedDate), endDate: getMonthEnd(selectedDate) };
+      startDate = new Date(selectedDate);
+      startDate.setDate(selectedDate.getDate() - selectedDate.getDay() + 1); // Lunedì
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6); // Domenica
+    } else if (view === 'month') {
+      startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
     }
+    
+    return { startDate, endDate };
   };
 
-  const getWeekStart = (date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - (day === 0 ? 6 : day - 1);
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
-  const getWeekEnd = (date) => {
-    const d = getWeekStart(date);
-    d.setDate(d.getDate() + 6);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  };
-
-  const getMonthStart = (date) => {
-    const d = new Date(date);
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
-  const getMonthEnd = (date) => {
-    const d = new Date(date);
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(0);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  };
-
-  const getWeekDays = () => {
-    const days = [];
-    const start = getWeekStart(selectedDate);
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + i);
-      days.push(day);
-    }
-    return days;
+  const goToToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentDate(today);
   };
 
   const navigate = (direction) => {
     const newDate = new Date(selectedDate);
+    
     if (view === 'day') {
       newDate.setDate(newDate.getDate() + direction);
     } else if (view === 'week') {
       newDate.setDate(newDate.getDate() + (direction * 7));
-    } else {
+    } else if (view === 'month') {
       newDate.setMonth(newDate.getMonth() + direction);
     }
+    
     setSelectedDate(newDate);
+    if (view === 'month') {
+      setCurrentDate(newDate);
+    }
   };
 
-  const goToToday = () => {
-    setSelectedDate(new Date());
+  const getWeekDays = () => {
+    const startOfWeek = new Date(selectedDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust when Sunday
+    startOfWeek.setDate(diff);
+    
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      return day;
+    });
+  };
+
+  const getFilteredAppointments = () => {
+    if (!filterStatus) return appointments;
+    
+    if (filterStatus === 'today') {
+      const today = new Date().toDateString();
+      return appointments.filter(apt => new Date(apt.bookingStart).toDateString() === today);
+    }
+    
+    if (filterStatus === 'total') {
+      return appointments;
+    }
+    
+    return appointments.filter(apt => apt.status === filterStatus);
   };
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      approved: { label: 'Confermato', color: 'bg-green-100' },
-      pending: { label: 'In Attesa', color: 'bg-yellow-100' },
-      canceled: { label: 'Annullato', color: 'bg-gray-100' },
-      rejected: { label: 'Rifiutato', color: 'bg-gray-100' },
-      'no-show': { label: 'Assente', color: 'bg-orange-100' }
+      'approved': { text: 'Confermato', className: 'status-approved' },
+      'pending': { text: 'In Attesa', className: 'status-pending' },
+      'canceled': { text: 'Annullato', className: 'status-canceled' },
+      'rejected': { text: 'Rifiutato', className: 'status-rejected' },
+      'no-show': { text: 'Assente', className: 'status-no-show' },
     };
-    const config = statusConfig[status] || statusConfig.pending;
-    return <span className={`status-badge ${config.color}`}>{config.label}</span>;
-  };
-
-  const handleCreateAppointment = async () => {
-  try {
-    setLoading(true);
     
-    setShowCreateModal(false);
-    setCreateModalTime(null);
-    await loadAppointments();
-    await fetchAPI('stats').then(d => setStats(d.data || null));
-    
-  } catch (err) {
-    console.error('Errore reload:', err);
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleUpdateAppointment = async (appointmentId, updateData) => {
-    try {
-      setLoading(true);
-      
-      const ameliaUpdateData = {
-        ...updateData,
-        notifyParticipants: 1,
-        sendNotification: true,
-        type: 'appointment'
-      };
-      
-      await fetchAPI(`/appointments/${appointmentId}`, { 
-        method: 'PUT', 
-        body: JSON.stringify(ameliaUpdateData) 
-      });
-      
-      setSelectedAppointment(null);
-      await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
-      
-      if (updateData.bookingStart || updateData.bookingEnd) {
-        alert('Appuntamento riprogrammato con successo!\n\nIl cliente e il fornitore riceveranno una email di notifica.');
-      } else if (updateData.status) {
-        alert('Stato appuntamento aggiornato con successo!\n\nIl cliente riceverà una email di notifica.');
-      } else {
-        alert('Appuntamento aggiornato con successo!');
-      }
-    } catch (err) {
-      alert('Errore aggiornamento: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancelAppointment = async (appointmentId) => {
-    if (!confirm('Sei sicuro di voler cancellare questo appuntamento?')) return;
-    try {
-      setLoading(true);
-      await fetchAPI(`/appointments/${appointmentId}`, { method: 'DELETE' });
-      setSelectedAppointment(null);
-      await loadAppointments();
-      await fetchAPI('stats').then(d => setStats(d.data || null));
-      alert('Appuntamento cancellato con successo!');
-    } catch (err) {
-      alert('Errore cancellazione: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    const config = statusConfig[status] || { text: status, className: 'status-default' };
+    return <span className={`status-badge ${config.className}`}>{config.text}</span>;
   };
 
   const handleSlotClick = (day, hour) => {
-    const slotDate = new Date(day);
-    slotDate.setHours(hour, 0, 0, 0);
-    setCreateModalTime(slotDate);
+    if (!canCreateAppointments) {
+      console.log('ℹ️ Customer role cannot create appointments');
+      return;
+    }
+    
+    const dateTime = new Date(day);
+    dateTime.setHours(hour, 0, 0, 0);
+    setCreateModalTime(dateTime);
     setShowCreateModal(true);
   };
 
-  const handleStatCardClick = (status) => {
-    setFilterStatus(status);
+  const handleCreateAppointment = async (appointmentData) => {
+    try {
+      await onCreate(appointmentData);
+      loadAppointments();
+    } catch (error) {
+      console.error('Errore creazione appuntamento:', error);
+    }
+  };
+
+  const handleUpdateAppointment = async (id, updates) => {
+    try {
+      const response = await fetchAPI(`appointments/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates)
+      });
+      
+      if (response.status === 'success') {
+        loadAppointments();
+        if (selectedAppointment && selectedAppointment.id === id) {
+          setSelectedAppointment({ ...selectedAppointment, ...updates });
+        }
+      }
+    } catch (error) {
+      console.error('Errore aggiornamento appuntamento:', error);
+    }
+  };
+
+  const handleCancelAppointment = async (id) => {
+    if (!confirm('Sei sicuro di voler cancellare questo appuntamento?')) return;
+    
+    try {
+      const response = await fetchAPI(`appointments/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.status === 'success') {
+        loadAppointments();
+        setSelectedAppointment(null);
+      }
+    } catch (error) {
+      console.error('Errore cancellazione appuntamento:', error);
+    }
+  };
+
+  const handleStatCardClick = (filterType) => {
+    setFilterStatus(filterType);
     setShowFilteredList(true);
   };
 
-  const getFilteredAppointments = () => {
-  const today = new Date().toISOString().split('T')[0];
-  
-  switch(filterStatus) {
-    case 'today':
-      return allAppointments.filter(apt => 
-        apt.bookingStart.startsWith(today) && apt.status === 'approved'
-      );
-    case 'total':
-      return allAppointments; // ✅ 
-    case 'approved':
-      return allAppointments.filter(apt => apt.status === 'approved');
-    case 'pending':
-      return allAppointments.filter(apt => apt.status === 'pending');
-    case 'canceled':
-      return allAppointments.filter(apt => apt.status === 'canceled'); // ✅
-    case 'rejected':
-      return allAppointments.filter(apt => apt.status === 'rejected');
-    default:
-      return allAppointments;
-  }
-};
-
-  if (loading && appointments.length === 0) {
+  if (loading) {
     return (
-      <div className="fantastical-app">
-        <div className="fantastical-header" style={{ opacity: 0.5 }}>
-          <div style={{ height: '100px', background: 'var(--gray-100)', borderRadius: '12px', animation: 'pulse 1.5s infinite' }}></div>
-        </div>
-        <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
-          <div style={{ marginBottom: '16px', fontSize: '14px' }}>
-            Caricamento agenda{validProviderId ? ` per provider ${validProviderId}` : ''}...
-          </div>
-          <div className="loading-spinner" style={{ margin: '0 auto' }}></div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error fallback UI
-  if (error && error.includes('provider')) {
-    return (
-      <div className="fantastical-app">
-        <div style={{ padding: '40px', textAlign: 'center' }}>
-          <div style={{ color: '#dc2626', marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
-            Errore Provider
-          </div>
-          <div style={{ color: '#6b7280', marginBottom: '24px' }}>
-            Problema con provider ID: {validProviderId}
-          </div>
+      <div className="loading-container">
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          gap: '24px'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            border: '4px solid #e5e7eb',
+            borderTopColor: '#1A5367',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <p style={{ color: '#6b7280', fontSize: '18px' }}>Caricamento calendario...</p>
           <button 
-            onClick={() => {
-              window.location.href = window.location.pathname; // Ricarica senza parametri
-            }}
+            onClick={() => window.location.reload()}
             style={{
               background: '#1A5367',
-              color: 'white', 
+              color: 'white',
               border: 'none',
               padding: '12px 24px',
               borderRadius: '8px',
@@ -1887,180 +1900,107 @@ const handleCreateCustomer = async () => {
   // Raggruppa slot per periodo del giorno
   const groupSlotsByPeriod = () => {
     const periods = {
-      morning: { label: 'Mattina (07:00-12:00)', slots: [] },
-      afternoon: { label: 'Pomeriggio (12:00-18:00)', slots: [] },
-      evening: { label: 'Sera (18:00-21:00)', slots: [] }
+      'Mattina': [],
+      'Pomeriggio': [],
+      'Sera': []
     };
 
     availableSlots.forEach(slot => {
-      const hour = parseInt(slot.time.split(':')[0]);
+      const date = new Date(slot);
+      const hour = date.getHours();
       
       if (hour < 12) {
-        periods.morning.slots.push(slot);
+        periods['Mattina'].push(slot);
       } else if (hour < 18) {
-        periods.afternoon.slots.push(slot);
+        periods['Pomeriggio'].push(slot);
       } else {
-        periods.evening.slots.push(slot);
+        periods['Sera'].push(slot);
       }
     });
 
     return periods;
   };
-  
+
+  const renderTimeSlots = () => {
+    if (loadingSlots) {
+      return (
+        <div className="loading-slots">
+          <div className="loading-spinner"></div>
+          <p>Caricamento slot disponibili...</p>
+        </div>
+      );
+    }
+
+    if (availableSlots.length === 0) {
+      return (
+        <div className="no-slots">
+          <Clock size={48} />
+          <p>Nessuno slot disponibile per questa data</p>
+          <p>Prova a selezionare un altro giorno</p>
+        </div>
+      );
+    }
+
+    const periods = groupSlotsByPeriod();
+
+    return (
+      <div className="time-slots-container">
+        {Object.entries(periods).map(([period, slots]) => {
+          if (slots.length === 0) return null;
+          
+          return (
+            <div key={period} className="time-period">
+              <div className="period-label">{period}</div>
+              <div className="slots-grid">
+                {slots.map(slot => (
+                  <button
+                    key={slot}
+                    type="button"
+                    className={`time-slot ${formData.bookingStart.startsWith(slot.split(' ')[0]) && 
+                      formData.bookingStart.includes(slot.split(' ')[1]) ? 'selected' : ''}`}
+                    onClick={() => handleTimeSelect(slot)}
+                  >
+                    {new Date(slot).toLocaleTimeString('it-IT', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
+      <div className="modal-content create-appointment">
         <div className="modal-header">
           <h2>Nuovo Appuntamento</h2>
           <button onClick={onClose} className="modal-close">
             <X size={24} />
           </button>
         </div>
-        
-        <form onSubmit={handleSubmit} className="modal-form">
+
+        <form onSubmit={handleSubmit}>
           {paymentLink ? (
-            // Mostra Payment Link
-            <div style={{ textAlign: 'center' }}>
-              {/* ... codice payment link esistente ... */}
+            <div className="payment-success">
+              <div className="success-icon">✅</div>
+              <h3>Appuntamento Creato!</h3>
+              <p>Link di pagamento generato:</p>
+              <div className="payment-link">
+                <input type="text" value={paymentLink} readOnly />
+                <button type="button" onClick={() => navigator.clipboard.writeText(paymentLink)}>
+                  Copia Link
+                </button>
+              </div>
+              <p>Invia questo link al cliente per completare il pagamento.</p>
+              <button type="button" onClick={onClose} className="btn-primary">Chiudi</button>
             </div>
           ) : (
             <>
-              {/* Cliente */}
-              <div className="form-group">
-                <div className="form-label-row">
-                  <label>Paziente *</label>
-                  <button 
-                    type="button"
-                    className="btn-new-customer"
-                    onClick={() => setShowNewCustomer(!showNewCustomer)}
-                  >
-                    <Plus size={16} />
-                    Nuovo Paziente
-                  </button>
-                </div>
-                
-                {!showNewCustomer ? (
-                  <select 
-                    value={formData.customerId} 
-                    onChange={(e) => setFormData(prev => ({ ...prev, customerId: e.target.value }))} 
-                    required
-                  >
-                    <option value="">Seleziona paziente</option>
-                    {customers.map(customer => (
-                      <option key={customer.id} value={customer.id}>{customer.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="new-customer-form">
-                    // FORM crea paziente COMPLETO:
-<div className="new-customer-form">
-  <h3>Crea Nuovo Paziente</h3>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Nome *</label>
-      <input
-        type="text"
-        value={newCustomerData.firstName}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, firstName: e.target.value }))}
-        placeholder="Nome"
-        required
-      />
-    </div>
-    
-    <div className="form-group">
-      <label>Cognome *</label>
-      <input
-        type="text"
-        value={newCustomerData.lastName}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, lastName: e.target.value }))}
-        placeholder="Cognome"
-        required
-      />
-    </div>
-  </div>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Email *</label>
-      <input
-        type="email"
-        value={newCustomerData.email}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, email: e.target.value }))}
-        placeholder="email@esempio.com"
-        required
-      />
-    </div>
-    
-    <div className="form-group">
-      <label>Telefono *</label>
-      <input
-        type="tel"
-        value={newCustomerData.phone}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, phone: e.target.value }))}
-        placeholder="+39 000 000 0000"
-        required
-      />
-    </div>
-  </div>
-  
-  <div className="customer-form-row">
-    <div className="form-group">
-      <label>Genere</label>
-      <select
-        value={newCustomerData.gender}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, gender: e.target.value }))}
-      >
-        <option value="">Seleziona genere</option>
-        <option value="male">Maschio</option>
-        <option value="female">Femmina</option>
-        <option value="other">Altro</option>
-        <option value="not-specified">Non specificato</option>
-      </select>
-    </div>
-    
-    <div className="form-group">
-      <label>Data di nascita</label>
-      <input
-        type="date"
-        value={newCustomerData.dateOfBirth}
-        onChange={(e) => setNewCustomerData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-      />
-    </div>
-  </div>
-  
-  <div className="form-group">
-    <label>Note</label>
-    <textarea
-      value={newCustomerData.note}
-      onChange={(e) => setNewCustomerData(prev => ({ ...prev, note: e.target.value }))}
-      placeholder="Note aggiuntive sul paziente..."
-      rows="3"
-    />
-  </div>
-  
-  <div className="customer-form-actions">
-    <button
-      type="button"
-      className="btn-cancel"
-      onClick={() => setShowNewCustomer(false)}
-    >
-      Annulla
-    </button>
-    <button
-      type="button"
-      className="btn-create-customer"
-      onClick={handleCreateCustomer}
-    >
-      <User size={16} />
-      Crea Paziente
-    </button>
-  </div>
-</div>
-                  </div>
-                )}
-              </div>
-              
               {/* Servizio */}
               <div className="form-group">
                 <label>Servizio *</label>
@@ -2072,131 +2012,148 @@ const handleCreateCustomer = async () => {
                   <option value="">Seleziona servizio</option>
                   {services.map(service => (
                     <option key={service.id} value={service.id}>
-                      {service.name} ({Math.round(service.duration / 60)} min - €{service.price})
+                      {service.name} - €{service.price} ({service.duration/60}min)
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               {/* Location */}
-<div className="form-group">
-  <label>Luogo *</label>
-  <select 
-    value={formData.locationId} 
-    onChange={(e) => {
-      setFormData(prev => ({ 
-        ...prev, 
-        locationId: e.target.value, 
-        bookingStart: '', 
-        bookingEnd: '' 
-      }));
-      setSelectedDate(null);
-      setAvailableDays([]);
-      setAvailableDaysCache({});
-    }}
-    required
-  >
-    <option value="">Seleziona un luogo</option>
-    {locations.map(location => (
-      <option key={location.id} value={location.id}>
-        {location.name}
-      </option>
-    ))}
-  </select>
-</div>
-              
-{/* Date Picker */}
-{formData.serviceId && formData.locationId && (
-  <div className="form-group">
-    <label>Seleziona Data *</label>
-    <DatePicker
-      selected={selectedDate}
-      onChange={handleDateChange}
-      onMonthChange={handleMonthChange}
-      dateFormat="dd/MM/yyyy"
-      locale="it"
-      minDate={new Date()}
-      filterDate={filterDate}
-      highlightDates={availableDays.map(d => new Date(d + 'T12:00:00'))}
-      inline
-    />
-  </div>
-)}
-              {/* Time Picker con Slot Disponibili */}
-              {selectedDate && formData.serviceId && formData.locationId && (
+              <div className="form-group">
+                <label>Luogo *</label>
+                <select 
+                  value={formData.locationId} 
+                  onChange={(e) => setFormData(prev => ({ ...prev, locationId: e.target.value }))}
+                  required
+                >
+                  <option value="">Seleziona luogo</option>
+                  {locations.map(location => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Data e Ora */}
+              {formData.serviceId && formData.locationId && (
+                <div className="form-group">
+                  <label>Data *</label>
+                  <DatePicker
+                    selected={selectedDate}
+                    onChange={handleDateChange}
+                    onMonthChange={handleMonthChange}
+                    filterDate={filterDate}
+                    locale="it"
+                    dateFormat="dd/MM/yyyy"
+                    minDate={new Date()}
+                    placeholderText="Seleziona una data"
+                    className="date-input"
+                    inline
+                  />
+                </div>
+              )}
+
+              {/* Time Picker */}
+              {showTimePicker && (
                 <div className="form-group">
                   <label>Orario Disponibile *</label>
-                  
-                  {loadingSlots ? (
-                    <div style={{ textAlign: 'center', padding: '20px' }}>
-                      <div className="loading-spinner"></div>
-                      <p>Caricamento orari disponibili...</p>
-                    </div>
-                  ) : availableSlots.length === 0 ? (
-                    <div style={{ 
-                      padding: '20px', 
-                      background: '#fef2f2', 
-                      borderRadius: '8px', 
-                      textAlign: 'center',
-                      color: '#dc2626'
-                    }}>
-                      <AlertCircle size={24} style={{ margin: '0 auto 10px' }} />
-                      <p>Nessuno slot disponibile per questa data</p>
-                      <small>Seleziona un'altra data</small>
-                    </div>
-                  ) : (
-                    <div className="time-slots-container">
-                      {Object.entries(groupSlotsByPeriod()).map(([key, period]) => {
-                        if (period.slots.length === 0) return null;
+                  {renderTimeSlots()}
+                </div>
+              )}
 
-                        return (
-                          <div key={key} className="time-period">
-                            <div className="period-label">{period.label}</div>
-                            <div className="slots-grid">
-                              {period.slots.map((slot, index) => (
-                                <button
-                                  key={index}
-                                  type="button"
-                                  className={`time-slot ${formData.bookingStart === slot.datetime ? 'selected' : ''}`}
-                                  onClick={() => handleTimeSelect(slot.datetime)}
-                                >
-                                  {slot.time}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  
-                  {formData.bookingStart && (
-                    <div style={{ 
-                      marginTop: '15px', 
-                      padding: '12px', 
-                      background: '#dcfce7', 
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      <Clock size={18} style={{ color: '#16a34a' }} />
-                      <span style={{ color: '#15803d', fontWeight: '600' }}>
-                        Orario selezionato: {new Date(formData.bookingStart).toLocaleString('it-IT', {
-                          day: '2-digit',
-                          month: 'long',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
+              {/* Cliente */}
+              {formData.bookingStart && (
+                <div className="form-group">
+                  <label>Cliente *</label>
+                  <div className="customer-selection">
+                    <select 
+                      value={formData.customerId} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, customerId: e.target.value }))}
+                      required={!showNewCustomer}
+                    >
+                      <option value="">Seleziona cliente esistente</option>
+                      {customers.map(customer => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name || `${customer.firstName} ${customer.lastName}`} - {customer.email}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => setShowNewCustomer(!showNewCustomer)} className="btn-secondary">
+                      {showNewCustomer ? 'Seleziona Esistente' : 'Nuovo Cliente'}
+                    </button>
+                  </div>
+
+                  {/* Form Nuovo Cliente */}
+                  {showNewCustomer && (
+                    <div className="new-customer-form">
+                      <h4>Dati Nuovo Cliente</h4>
+                      <div className="form-row">
+                        <input
+                          type="text"
+                          placeholder="Nome *"
+                          value={newCustomerData.firstName}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, firstName: e.target.value }))}
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Cognome *"
+                          value={newCustomerData.lastName}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, lastName: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="form-row">
+                        <input
+                          type="email"
+                          placeholder="Email *"
+                          value={newCustomerData.email}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, email: e.target.value }))}
+                          required
+                        />
+                        <input
+                          type="tel"
+                          placeholder="Telefono *"
+                          value={newCustomerData.phone}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, phone: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div className="form-row">
+                        <select
+                          value={newCustomerData.gender}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, gender: e.target.value }))}
+                        >
+                          <option value="">Seleziona genere</option>
+                          <option value="male">Maschio</option>
+                          <option value="female">Femmina</option>
+                          <option value="other">Altro</option>
+                        </select>
+                        <input
+                          type="date"
+                          placeholder="Data di nascita"
+                          value={newCustomerData.dateOfBirth}
+                          onChange={(e) => setNewCustomerData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                        />
+                      </div>
+                      <textarea
+                        placeholder="Note aggiuntive"
+                        value={newCustomerData.note}
+                        onChange={(e) => setNewCustomerData(prev => ({ ...prev, note: e.target.value }))}
+                        rows="3"
+                      />
+                      <button type="button" onClick={handleCreateCustomer} className="btn-primary">
+                        Crea e Seleziona Cliente
+                      </button>
                     </div>
                   )}
                 </div>
               )}
-              
+
               {/* Checkbox Pagamento */}
               <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '12px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.requirePayment}
